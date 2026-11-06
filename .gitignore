@@ -1,0 +1,26 @@
+# Personal settings and API credentials (including legacy locations)
+ai_chat_config.json*
+keyboard_pet_config.json*
+input_bindings.tsv*
+.env
+.env.*
+!.env.example
+/data/calendar/**
+!/data/calendar/README.md
+
+# Reproducible outputs and development caches
+*.exe
+*.dll
+*.pdb
+*.bak
+*.tmp
+*.log
+/dist/
+/build/
+/.tools/
+/assets/previews/
+.vs/
+.vscode/
+__pycache__/
+Thumbs.db
+Desktop.ini

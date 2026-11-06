@@ -1,0 +1,10 @@
+Tool: built-in image_gen.imagegen
+Mode: edit, transparent_background=true
+Edit target: assets/keyboard-knight/rig/hair-cap.png (original long-hair cap, retained)
+Supporting reference: assets/previews/current-idle.png (long-hair version at generation time)
+Generated original: assets/keyboard-knight/short-hair-cap-source.png
+Registered runtime asset: assets/keyboard-knight/rig/short-hair-cap.png
+Registration: resize 1436x1095 transparent source to the existing 900x687 rig canvas.
+
+Final prompt:
+Use case: precise-object-edit. Create a production replacement HAIR CAP SPRITE for this existing animated character. Image 1 is the exact edit target: a white hair-only registered cutout on transparent 900x687 canvas. Image 2 is ONLY character style/face-position reference, do not output a full character. Keep the same hair crown, parting, ivory white/lavender shading and dark hand-drawn outline. Redesign the side silhouette into a compact chin-length layered short bob / soft pixie bob: REMOVE both large outward flowing side hair masses below the cheeks and all shoulder-length hair, bring side width close to the face with little feathered inward-pointing ends at jaw level. Hair tips should end around y=480 on the 900x687 canvas; everything below y=495 must be transparent. Keep the original crown geometry, position and scale unchanged: center part at x=490 y=130, top cap at y=65. Preserve the existing EMPTY face aperture and the two EMPTY front-bang cutout regions exactly, these will be filled by separate eye/face/fringe sprites. No eyes, no face, no skin, no body, no neck, no ahoge, no text, no clip, no accessories. This is only the short-hair cap, no other subject. Clean closed short-hair outer contours at the jaw with 2-3 small tapering locks, not a blunt horizontal image crop. Keep original upper hair design and face-framing aperture invariant; edit only lower side and back hair silhouette. Actual transparent background, not a black or checkerboard background. Composition must match image 1 registration so existing separate face and bangs fit.

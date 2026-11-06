@@ -1,0 +1,23 @@
+name: Windows build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build application and installer
+        shell: powershell
+        run: ./tools/Build-Installer.ps1
+      - name: Verify package lifecycle
+        shell: powershell
+        run: ./tests/Test-Package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DesktopPet-Windows
+          path: dist/*
+          if-no-files-found: error

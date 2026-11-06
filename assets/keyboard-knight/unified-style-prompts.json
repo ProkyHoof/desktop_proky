@@ -1,0 +1,12 @@
+{
+  "mode": "built-in image_gen",
+  "edit_target": "large-glove-arms.png",
+  "style_reference": "rounded-original-body.png",
+  "output": "soft-style-arms.png",
+  "prompt": "Use case: style-transfer / precise-object-edit. Input1 is the EDIT TARGET: a transparent two-cell sheet of left and right connected small-shoulder/silver-armored-arm/large-black-glove sprites. Input2 is the EXACT DRAWING STYLE reference: the currently accepted desktop pet head/body atlas. Make a subtle STYLE-ONLY refinement of the arms so they look painted by the same artist as the face, white hair and black shirt in input2. Preserve input1 silhouette, small shoulder versus big hand proportion, glove shape/finger/thumb anatomy, overall size, exact shoulder-to-fingertip axis and registration, pose, silver armor and charcoal gloves, two mirrored units, spacing and transparent margins. NO proportion redesign. Replace the busy semi-realistic creases, polygonal glove shading, chrome reflections and sharp bright metal streaks with the reference character's simple soft anime cel shading: one restrained gray shadow and a broad gentle highlight on silver plates, smooth rounded charcoal gloves with only one or two understated curved finger seams, clean even dark-charcoal outline of the SAME relative thickness as the character's head and body. Matte soft surfaces, rounded cute contours, restrained contrast and neutral gray palette matching the black jacket and white hair shadows. Keep hand fingers readable and preserve large hand/small shoulder. No realistic skin texture, no scratch lines, no hard angular facets, no glossy 3D render, no heavily segmented shading, no extra armor ornaments. Do NOT draw the head, body, scarf, hair or any device in the output; image2 is ONLY a style reference. Output the same TWO equal cells side by side in ONE horizontal row, same exact geometry and layout as input1, left cell thumb inward on right and right cell thumb inward on left. Keep actual transparent alpha outside the silhouettes, no background/checkerboard/shadow, no captions, text or watermark.",
+  "desk_adjustment": {
+    "keyboard_y": -10,
+    "mouse_pad_y": -10,
+    "mouse_and_rest_hand_y": -10
+  }
+}

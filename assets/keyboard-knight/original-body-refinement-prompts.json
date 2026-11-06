@@ -1,0 +1,27 @@
+{
+  "mode": "built-in image_gen",
+  "edit_target": "small-shoulder-character.png",
+  "output": "rounded-original-body.png",
+  "prompt": "Use case: precise-object-edit. EDIT THE SUPPLIED EXISTING TWO-CELL SPRITE ATLAS, do NOT redesign the character or replace her costume. Preserve the exact bare white-haired head, face, red eyes, ahoge, smile, hair shading and registration; preserve the original RED SCARF and BLACK KNIGHT JACKET with silver-gray hardware. Absolutely NO helmet, NO fur collar, NO dress, NO bare chest, NO V-neck, NO necklace and NO costume from any other reference. The user ONLY wants original body SHAPE and shoulder anatomy refined. Modify only below the chin around y=550..740 in each 1024x768 cell. Make the black jacket upper body much SMALLER and NARROWER with natural rounded sloping SHOULDERS under the scarf, softly curved sides that taper inward toward a tiny rounded waist, and a curved lower hem. NOT a square/rectangle/block, no straight vertical sidewalls or wide flat bottom. Keep the torso ending near the original waist y=730 so the app's desk can cover it. Shoulder roots should grow organically from the upper black jacket at left around x=420,y=600 and right x=620,y=600; tiny short rounded black fabric sleeve sockets are anatomically connected to the torso, directly under the scarf corners. Tiny shoulders and big head, jacket body width narrows to approximately 160px near its lower half instead of the old230px. The separate SMALL SILVER SHOULDER-CAP / BIG BLACK GLOVE arm layers attach to these tiny sleeve sockets; do not paint any metal armor, forearms, hands or gloves into this core. Leave clear visible sleeve attachment zones, no white hair across them. Long white rear hair remains fully BEHIND the shoulders, black jacket and future arms. Retain existing red scarf, charcoal jacket material and simple silver zipper but let them follow the smaller curved body. Exactly two equal cells side by side, LEFT open eyes RIGHT gently closed eyes, same exact head/body geometry and alignment, only eyelids differ. Keep original approximately2048x768 atlas framing and every head/eye/chin coordinate. Transparent alpha outside silhouettes, no checkerboard/background/shadow, no text, labels or watermark. This is a localized adjustment of the original black/red knight body, never a costume replacement.",
+  "preserved": [
+    "bare white-haired head",
+    "red scarf",
+    "black knight jacket",
+    "silver armor and large black gloves"
+  ],
+  "shoulder_socket_landmarks": {
+    "atlas_cell_size": [
+      1024,
+      768
+    ],
+    "left": [
+      405,
+      590
+    ],
+    "right": [
+      635,
+      590
+    ],
+    "mapping": "LivingPetPortrait.WorldPoint: inverse of the same pixel deformation used to draw the body"
+  }
+}
