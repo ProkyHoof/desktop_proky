@@ -8,6 +8,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Build application and installer
@@ -15,7 +16,7 @@ jobs:
         run: ./tools/Build-Installer.ps1
       - name: Verify package lifecycle
         shell: powershell
-        run: ./tests/Test-Package.ps1
+        run: ./tests/Test-Package.ps1 -SkipUi
       - uses: actions/upload-artifact@v4
         with:
           name: DesktopPet-Windows

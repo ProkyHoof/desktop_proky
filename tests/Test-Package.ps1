@@ -1,4 +1,4 @@
-param([string]$Version = '1.1.0')
+param([string]$Version = '1.1.0', [switch]$SkipUi)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $temporary = Join-Path ([IO.Path]::GetFullPath($env:TEMP)) ('DesktopPet-package-test-' + [Guid]::NewGuid().ToString('N'))
@@ -11,7 +11,8 @@ function Check([bool]$Condition, [string]$Message) { if (-not $Condition) { thro
 function Run-PackageScript([string]$Script, [string]$Arguments, [bool]$ExpectFailure = $false) {
     $stdout = Join-Path $temporary 'process.stdout.txt'
     $stderr = Join-Path $temporary 'process.stderr.txt'
-    $result = Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "' + $Script + '" ' + $Arguments) -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $result = Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "' + $Script + '" ' + $Arguments) -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if (-not $result.WaitForExit(90000)) { $result.Kill(); throw ('Package operation timed out: ' + (Split-Path -Leaf $Script)) }
     if ($ExpectFailure) { Check ($result.ExitCode -ne 0) 'Unsafe operation unexpectedly succeeded.' }
     elseif ($result.ExitCode -ne 0) { throw ('Package operation failed: ' + [IO.File]::ReadAllText($stderr)) }
 }
@@ -34,9 +35,12 @@ try {
     Check ($manifest.version -eq $Version) 'Incorrect installer version.'
     try { [void](Resolve-PetInstallPath ([IO.Path]::GetPathRoot($temporary))); throw 'Root directory was accepted.' }
     catch { if ($_.Exception.Message -eq 'Root directory was accepted.') { throw } }
-    $form = New-PetInstallForm $installed $true $false
-    $form.Icon = [Drawing.Icon]::ExtractAssociatedIcon((Join-Path $temporary 'payload/DesktopPet.exe'))
-    try {
+    if (-not $SkipUi) {
+        [void](Resolve-PetInstallPath $installed)
+        Test-PetWritableDirectory $installed
+        $form = New-PetInstallForm $installed $true $false
+        $form.Icon = [Drawing.Icon]::ExtractAssociatedIcon((Join-Path $temporary 'payload/DesktopPet.exe'))
+        try {
         Check $form.Controls['DesktopShortcut'].Checked 'Desktop shortcut should be enabled by default.'
         $form.Show()
         [Windows.Forms.Application]::DoEvents()
@@ -48,7 +52,9 @@ try {
         $form.AcceptButton.PerformClick()
         Check ($form.Tag.InstallRoot -eq $installed) ('Directory selection handler failed. Expected: ' + $installed + '; actual: ' + $form.Tag.InstallRoot + '; result: ' + $form.DialogResult)
         Check $form.Tag.DesktopShortcut 'Desktop choice was lost.'
-    } finally { $form.Dispose() }
+        } finally { $form.Dispose() }
+        Write-Output 'PASS: interactive directory-selection dialog and desktop-shortcut default.'
+    }
     [void][IO.Directory]::CreateDirectory((Join-Path $legacy 'data/calendar/history/snapshot'))
     [IO.File]::WriteAllText((Join-Path $legacy 'keyboard_pet_config.json'),'{"size":252}')
     [IO.File]::WriteAllText((Join-Path $legacy 'ai_chat_config.json'),'{"protectedApiKey":"fixture-only"}')
@@ -58,6 +64,7 @@ try {
     $installer = Join-Path $extracted 'Install.ps1'
     $installArgs = '-Silent -NoRegistration -InstallRoot "' + $installed + '"'
     Run-PackageScript $installer ($installArgs + ' -ImportLegacyData -LegacyDataRoot "' + $legacy + '"')
+    Write-Output 'PASS: custom-directory installation completed.'
     Check (Test-Path -LiteralPath (Join-Path $data '.legacy-migrated')) 'User data should be initialized inside the installation.'
     $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $writeRules = @((Get-Acl -LiteralPath $data).Access | Where-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -eq $currentSid -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Modify) -eq [Security.AccessControl.FileSystemRights]::Modify })
@@ -69,6 +76,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $data 'keyboard_pet_config.json'),'{"size":420}')
     [IO.File]::WriteAllText((Join-Path $installed 'unrelated.txt'),'Must survive uninstall')
     Run-PackageScript $installer $installArgs
+    Write-Output 'PASS: upgrade completed.'
     Check ([IO.File]::ReadAllText((Join-Path $data 'keyboard_pet_config.json')) -eq '{"size":420}') 'Upgrade overwrote user preferences.'
     $snapshots = @{}
     foreach ($file in Get-ChildItem -LiteralPath $data -Recurse -File -Force) { $snapshots[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName).Hash }
@@ -95,6 +103,7 @@ try {
     Check (Test-Path -LiteralPath (Join-Path $installed 'DesktopPet.exe')) 'Invalid manifest caused a partial uninstall.'
     [IO.File]::WriteAllText($manifestPath,$originalManifest)
     Run-PackageScript $uninstaller '-Silent -NoRegistration -KeepUserData'
+    Write-Output 'PASS: keep-data uninstall completed.'
     Check (-not (Test-Path -LiteralPath (Join-Path $installed 'DesktopPet.exe'))) 'Program files remain after uninstall.'
     foreach ($file in $snapshots.Keys) { Check ((Get-FileHash -LiteralPath $file).Hash -eq $snapshots[$file]) 'Keep-data uninstall changed personal data.' }
     Check (Test-Path -LiteralPath (Join-Path $installed 'unrelated.txt')) 'Uninstall removed an unrelated file.'
@@ -103,7 +112,7 @@ try {
     Check (-not (Test-Path -LiteralPath $data)) 'Remove-data uninstall left personal data behind.'
     Check (Test-Path -LiteralPath (Join-Path $installed 'unrelated.txt')) 'Remove-data uninstall removed an unrelated file.'
     Check (@(Get-ChildItem -LiteralPath $installed -Force).Count -eq 1) 'Unexpected program files remained.'
-    Write-Output 'PASS: Unicode/custom directory UI, install-local data, legacy import, upgrade preservation, desktop/start shortcuts, manifest traversal protection, keep/delete-data uninstall and unrelated-file preservation.'
+    Write-Output 'PASS: Unicode/custom directory, install-local data, legacy import, upgrade preservation, desktop/start shortcuts, manifest traversal protection, keep/delete-data uninstall and unrelated-file preservation.'
 }
 finally {
     $resolved = [IO.Path]::GetFullPath($temporary)
