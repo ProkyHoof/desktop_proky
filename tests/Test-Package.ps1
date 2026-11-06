@@ -81,14 +81,13 @@ try {
     foreach ($file in Get-ChildItem -LiteralPath $data -Recurse -File -Force) { $snapshots[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName).Hash }
     $links = @((Join-Path $temporary 'shortcuts/Desktop.lnk'),(Join-Path $temporary 'shortcuts/Start.lnk'))
     Set-PetShortcuts $installed $links
-    $shell = New-Object -ComObject WScript.Shell
     foreach ($linkPath in $links) {
-        $link = $shell.CreateShortcut($linkPath)
+        $link = [PetInstaller.Shortcuts]::Read($linkPath)
         Check ($link.TargetPath -eq (Join-Path $installed 'DesktopPet.exe')) 'Shortcut target differs from the custom directory.'
         Check ($link.WorkingDirectory -eq $installed) 'Shortcut working directory is incorrect.'
         Check ($link.IconLocation -eq ((Join-Path $installed 'DesktopPet.exe') + ',0')) 'Shortcut does not use the application icon.'
     }
-    $foreignLink = $shell.CreateShortcut($links[0]); $foreignLink.TargetPath = Join-Path $env:WINDIR 'notepad.exe'; $foreignLink.Save()
+    [PetInstaller.Shortcuts]::Create($links[0],(Join-Path $env:WINDIR 'notepad.exe'),$env:WINDIR)
     Remove-PetShortcuts $installed $links
     Check (Test-Path -LiteralPath $links[0]) 'Uninstall deleted a shortcut belonging to another target.'
     Check (-not (Test-Path -LiteralPath $links[1])) 'Owned shortcut was not removed.'

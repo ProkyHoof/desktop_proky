@@ -99,24 +99,76 @@ function Assert-PetPlainTree([string]$Root) {
     }
 }
 
+function Initialize-PetShortcutApi {
+    if ('PetInstaller.Shortcuts' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+namespace PetInstaller {
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")] class ShellLink { }
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+    interface IShellLinkW {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int length, IntPtr data, uint flags);
+        void GetIDList(out IntPtr idList);
+        void SetIDList(IntPtr idList);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int length);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string text);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int length);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string path);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int length);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string text);
+        void GetHotkey(out short hotkey);
+        void SetHotkey(short hotkey);
+        void GetShowCmd(out int command);
+        void SetShowCmd(int command);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int length, out int index);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string path, int index);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, uint reserved);
+        void Resolve(IntPtr window, uint flags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string path);
+    }
+    public sealed class ShortcutInfo { public string TargetPath, WorkingDirectory, IconLocation; }
+    public static class Shortcuts {
+        public static void Create(string path, string target, string workingDirectory) {
+            var link = (IShellLinkW)new ShellLink();
+            try {
+                link.SetPath(target); link.SetWorkingDirectory(workingDirectory);
+                link.SetIconLocation(target, 0); link.SetDescription("DesktopPet");
+                ((IPersistFile)link).Save(path, true);
+            } finally { Marshal.FinalReleaseComObject(link); }
+        }
+        public static ShortcutInfo Read(string path) {
+            var link = (IShellLinkW)new ShellLink();
+            try {
+                ((IPersistFile)link).Load(path, 0);
+                var target = new StringBuilder(32768); var directory = new StringBuilder(32768);
+                var icon = new StringBuilder(32768); int index;
+                link.GetPath(target, target.Capacity, IntPtr.Zero, 4);
+                link.GetWorkingDirectory(directory, directory.Capacity);
+                link.GetIconLocation(icon, icon.Capacity, out index);
+                return new ShortcutInfo { TargetPath=target.ToString(), WorkingDirectory=directory.ToString(), IconLocation=icon.ToString()+","+index };
+            } finally { Marshal.FinalReleaseComObject(link); }
+        }
+    }
+}
+'@
+}
+
 function Set-PetShortcuts([string]$Root, [string[]]$Paths) {
-    $shell = New-Object -ComObject WScript.Shell
+    Initialize-PetShortcutApi
     foreach ($path in $Paths) {
         [void][IO.Directory]::CreateDirectory((Split-Path -Parent $path))
-        $link = $shell.CreateShortcut($path)
-        $link.TargetPath = Join-Path $Root 'DesktopPet.exe'
-        $link.WorkingDirectory = $Root
-        $link.IconLocation = (Join-Path $Root 'DesktopPet.exe') + ',0'
-        $link.Description = '白发小骑士 · 键鼠桌宠'
-        $link.Save()
+        [PetInstaller.Shortcuts]::Create($path,(Join-Path $Root 'DesktopPet.exe'),$Root)
     }
 }
 
 function Remove-PetShortcuts([string]$Root, [string[]]$Paths) {
-    $shell = New-Object -ComObject WScript.Shell
+    Initialize-PetShortcutApi
     foreach ($path in $Paths) {
         if (Test-Path -LiteralPath $path -PathType Leaf) {
-            $link = $shell.CreateShortcut($path)
+            $link = [PetInstaller.Shortcuts]::Read($path)
             if ($link.TargetPath -eq (Join-Path $Root 'DesktopPet.exe')) { Remove-Item -LiteralPath $path -Force }
         }
     }
