@@ -54,7 +54,7 @@ internal static class StorageTests
     internal static void Run(string assetsRoot)
     {
         string temporary=Path.Combine(Path.GetTempPath(),"DesktopPet-storage-"+Guid.NewGuid().ToString("N"));
-        string legacy=Path.Combine(temporary,"legacy"),user=Path.Combine(temporary,"user");
+        string legacy=Path.Combine(temporary,"legacy"),user=PetStorage.DataRoot(legacy);
         try
         {
             Directory.CreateDirectory(Path.Combine(legacy,"data","calendar","history","snapshot"));
@@ -78,7 +78,8 @@ internal static class StorageTests
                 Check((string)typeof(KeyboardPetWindow).GetField("configPath",flags).GetValue(pet)==Path.Combine(user,"keyboard_pet_config.json"),"Preferences use separate user root");
                 Check((string)typeof(KeyboardPetWindow).GetField("bindingsPath",flags).GetValue(pet)==Path.Combine(user,"input_bindings.tsv"),"Bindings use separate user root");
             }
-            Console.WriteLine("PASS: separate asset/user roots, non-destructive one-time migration, calendar backups and recovery history.");
+            Check(user==Path.Combine(Path.GetFullPath(legacy),"user-data"),"All persistent data must stay inside the installation");
+            Console.WriteLine("PASS: installation-local user data, non-destructive one-time migration, calendar backups and recovery history.");
         }
         finally { if(Directory.Exists(temporary))Directory.Delete(temporary,true); }
     }

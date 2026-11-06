@@ -1,4 +1,6 @@
 # Personal settings and API credentials (including legacy locations)
+/user-data/
+.desktop-pet-install.json
 ai_chat_config.json*
 keyboard_pet_config.json*
 input_bindings.tsv*

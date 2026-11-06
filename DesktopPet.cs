@@ -12,12 +12,10 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-// Keep the Windows registration as the source of truth rather than a second
-// preference in the JSON file. Quote the full path for folders containing spaces.
 internal static class PetStorage
 {
-    internal static string UserRoot
-    { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopPet"); } }
+    internal static string DataRoot(string installRoot)
+    { return Path.Combine(Path.GetFullPath(installRoot), "user-data"); }
 
     // Copy legacy data once, without replacing anything already saved by a newer installation.
     // Original files remain available for recovery until the user removes them.
@@ -43,6 +41,8 @@ internal static class PetStorage
     }
 }
 
+// Keep the Windows registration as the source of truth rather than a second
+// preference in the JSON file. Quote the full path for folders containing spaces.
 internal sealed class PetStartupRegistration
 {
     internal const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -661,7 +661,7 @@ internal static class Program
                 throw new ArgumentException("未识别的启动参数。");
             if (args.Length == 1 && args[0] == "--migrate-data")
             {
-                PetStorage.Migrate(root, PetStorage.UserRoot);
+                PetStorage.Migrate(root, PetStorage.DataRoot(root));
                 return 0;
             }
             if (args.Length == 1 && args[0] == "--exit")
@@ -693,8 +693,8 @@ internal static class Program
                 if (!created) return 0;
                 SetProcessDPIAware(); Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                PetStorage.Migrate(root, PetStorage.UserRoot);
-                using (var pet = new KeyboardPetWindow(root, dataRoot: PetStorage.UserRoot)) Application.Run(pet);
+                PetStorage.Migrate(root, PetStorage.DataRoot(root));
+                using (var pet = new KeyboardPetWindow(root, dataRoot: PetStorage.DataRoot(root))) Application.Run(pet);
             }
             return 0;
         }

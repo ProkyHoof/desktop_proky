@@ -1,4 +1,4 @@
-param([string]$Version = '1.0.0')
+param([string]$Version = '1.1.0')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use a numeric major.minor.patch version.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -28,11 +28,17 @@ try {
         Copy-Item -LiteralPath (Join-Path $rigSource $file) -Destination $target
     }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/Uninstall.ps1') -Destination $payload
-    $installText = [IO.File]::ReadAllText((Join-Path $projectRoot 'packaging/Install.ps1')).Replace("DisplayVersion='1.0.0'", "DisplayVersion='$Version'")
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/PackageSupport.ps1') -Destination $payload
+    $manifestFiles = @(Get-ChildItem -LiteralPath $payload -File -Recurse | ForEach-Object { $_.FullName.Substring($payload.Length + 1) })
+    $manifestText = @{appId='DesktopPet.ProkyHoof';version=$Version;files=$manifestFiles} | ConvertTo-Json -Depth 3
+    [IO.File]::WriteAllText((Join-Path $payload '.desktop-pet-install.json'), $manifestText, (New-Object Text.UTF8Encoding $false))
+    $installText = [IO.File]::ReadAllText((Join-Path $projectRoot 'packaging/Install.ps1'))
     # Windows PowerShell 5.1 requires a BOM for Chinese text.
     [IO.File]::WriteAllText((Join-Path $work 'Install.ps1'), $installText, (New-Object Text.UTF8Encoding $true))
-    $uninstallPath = Join-Path $payload 'Uninstall.ps1'
-    [IO.File]::WriteAllText($uninstallPath, [IO.File]::ReadAllText($uninstallPath), (New-Object Text.UTF8Encoding $true))
+    foreach ($name in @('Uninstall.ps1','PackageSupport.ps1')) {
+        $scriptPath = Join-Path $payload $name
+        [IO.File]::WriteAllText($scriptPath, [IO.File]::ReadAllText($scriptPath), (New-Object Text.UTF8Encoding $true))
+    }
     $check = Start-Process -FilePath (Join-Path $payload 'DesktopPet.exe') -ArgumentList '--self-test' -Wait -PassThru -WindowStyle Hidden
     if ($check.ExitCode -ne 0) { throw 'Packaged application self-test failed.' }
     $archive = Join-Path $work 'DesktopPet.zip'
