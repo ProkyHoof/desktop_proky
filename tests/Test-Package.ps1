@@ -11,8 +11,7 @@ function Check([bool]$Condition, [string]$Message) { if (-not $Condition) { thro
 function Run-PackageScript([string]$Script, [string]$Arguments, [bool]$ExpectFailure = $false) {
     $stdout = Join-Path $temporary 'process.stdout.txt'
     $stderr = Join-Path $temporary 'process.stderr.txt'
-    $result = Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "' + $Script + '" ' + $Arguments) -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-    if (-not $result.WaitForExit(90000)) { $result.Kill(); throw ('Package operation timed out: ' + (Split-Path -Leaf $Script)) }
+    $result = Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "' + $Script + '" ' + $Arguments) -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if ($ExpectFailure) { Check ($result.ExitCode -ne 0) 'Unsafe operation unexpectedly succeeded.' }
     elseif ($result.ExitCode -ne 0) { throw ('Package operation failed: ' + [IO.File]::ReadAllText($stderr)) }
 }
