@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -338,7 +338,8 @@ internal sealed class LivingPetPortrait : IDisposable
         if(name.StartsWith("hair-",StringComparison.Ordinal)&&name!="hair-cap"&&name!="hair-clip")
         {using(var m=LayerMatrix(name))g.MultiplyTransform(m);}
         else g.MultiplyTransform(Rig.Parts[name].Parent=="body" ? bodyPose : headPose);
-        Rig.Parts[name].Draw(g,opacity);g.Restore(saved);
+        Rig.Parts[name].Draw(g,opacity);
+        g.Restore(saved);
     }
     void DrawTorso(Graphics g)
     {
@@ -447,7 +448,8 @@ internal sealed class LivingPetPortrait : IDisposable
         {
             var apertureState=g.Save();g.SetClip(Rig.EyeClips[eye][(int)Math.Round(close*32)],CombineMode.Intersect);
             Rig.Parts["eye-"+side+"-white"].Draw(g);
-            g.TranslateTransform(GazeX*4.2f,GazeY*2.5f);Rig.Parts["eye-"+side+"-iris"].Draw(g);
+            g.TranslateTransform(GazeX*4.2f,GazeY*2.5f);
+            Rig.Parts["eye-"+side+"-iris"].Draw(g);
             g.Restore(apertureState);
         }
         g.Restore(saved);
@@ -664,6 +666,8 @@ internal sealed class LivingPetPortrait : IDisposable
     void DrawArmoredMusic(Graphics g)
     {
         float blend=MusicBlend*MusicArmorBlend;if(blend<.01f)return;
+        var faceSafe=g.Save();
+        using(var opening=HelmetFaceOpening())g.SetClip(opening,CombineMode.Exclude);
         int alpha=(int)(255*blend);
         float beat=(float)(.5+.5*Math.Sin(time*3.6)),energy=musicEnergy;
         // Compact audio housings attach to the temple carriages instead of
@@ -695,19 +699,20 @@ internal sealed class LivingPetPortrait : IDisposable
                 g.DrawArc(echo,x-radius,y-radius,radius*2,radius*2,side==0 ? 135 : -45,90);
             g.Restore(saved);
 
-            // Tiny mirrored meters are printed on the moving cheek armor.
-            float face=Smooth((helmet.Part(side+3)-.8f)/.2f);
+            // Audio meters stay on the outer temple housings, never on the face.
+            float face=Smooth((helmet.Part(side+1)-.8f)/.2f);
             if(face<=0)continue;
-            saved=g.Save();using(var pose=CurrentHelmetMatrix(side+3))g.MultiplyTransform(pose);
+            saved=g.Save();using(var pose=CurrentHelmetMatrix(side+1))g.MultiplyTransform(pose);
             for(int bar=0;bar<4;bar++)
             {
                 float height=1.5f+energy*(2+3*(float)(.5+.5*Math.Sin(time*5.2-bar*.8)));
-                float px=side==0 ? 113+bar*4 : 191-bar*4;
+                float px=side==0 ? 72+bar*4 : 232-bar*4;
                 using(var led=new Pen(Color.FromArgb((int)(alpha*face*.9f),181,37,54),1.6f))
-                    g.DrawLine(led,px,125-height/2,px,125+height/2);
+                    g.DrawLine(led,px,133-height/2,px,133+height/2);
             }
             g.Restore(saved);
         }
+        g.Restore(faceSafe);
     }
     void DrawTuckedAccessory(Graphics g,string name)
     {
@@ -716,7 +721,8 @@ internal sealed class LivingPetPortrait : IDisposable
         if(name=="hair-ahoge")
         {g.TranslateTransform(0,76);g.ScaleTransform(1,1-.9f*tuck);g.TranslateTransform(0,-76);}
         else g.TranslateTransform(-24*tuck,-8*tuck);
-        Rig.Parts[name].Draw(g);g.Restore(saved);
+        Rig.Parts[name].Draw(g);
+        g.Restore(saved);
     }
     internal void DrawHelmet(Graphics g,bool rear)
     {
@@ -732,6 +738,10 @@ internal sealed class LivingPetPortrait : IDisposable
             {scalp.AddEllipse(81,43,142,125);g.SetClip(scalp,CombineMode.Intersect);}
             DrawHelmetMechanism(g);g.Restore(saved);return;
         }
+        // The open-face helmet leaves a fixed, head-local facial aperture.
+        // It applies before part transforms, so moving plates and their lights
+        // cannot sweep over the eyes, cheeks or mouth during either direction.
+        using(var opening=HelmetFaceOpening())g.SetClip(opening,CombineMode.Exclude);
         // Visible armor always stays outside the scalp. Splitting one plate
         // between rear/front at a moving screen-space boundary sliced hair
         // across the metal rim, especially when reversing midway.
@@ -751,6 +761,16 @@ internal sealed class LivingPetPortrait : IDisposable
         }
         DrawHelmetPower(g);
         g.Restore(saved);
+    }
+    internal static GraphicsPath HelmetFaceOpening()
+    {
+        var path=new GraphicsPath();
+        path.AddBezier(95,110,110,110,133,115,152,116);
+        path.AddBezier(152,116,173,113,197,108,210,110);
+        path.AddBezier(210,110,216,132,208,153,190,164);
+        path.AddBezier(190,164,171,177,130,177,112,164);
+        path.AddBezier(112,164,94,153,89,130,95,110);
+        path.CloseFigure();return path;
     }
     internal static GraphicsPath HelmetDeploymentPath(int index,float progress,RectangleF bounds)
     {
@@ -792,7 +812,9 @@ internal sealed class LivingPetPortrait : IDisposable
     }
     Matrix CurrentHelmetMatrix(int index)
     {return HelmetPartMatrix(index,helmet.Part(0),helmet.Part(index==2||index==4 ? 2 : 1),helmet.Part(index));}
-    internal static readonly int[] HelmetDrawOrder={3,4,1,2,0,5};
+    // Face and chin panels remain stored; only the crown and temple shells
+    // deploy. The original six-part timing stays intact for smooth reversal.
+    internal static readonly int[] HelmetDrawOrder={1,2,0};
     static float Closed(float p){return Math.Max(0,Math.Min(1,p));}
     internal static Matrix HelmetCarrierMatrix(float progress)
     {

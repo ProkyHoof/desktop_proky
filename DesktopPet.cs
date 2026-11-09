@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
@@ -195,9 +195,15 @@ internal sealed class KeyboardPetWindow : Form
     Point pressCursor, pressLocation, lastLocation;
     int spriteWidth = 336;
     int hairStyle = PetHairStyles.Reference;
+    PetWardrobeWindow wardrobeWindow;
     bool bubbleKeys;
     PetCalendarWindow calendarWindow;
     PetChatWindow chatWindow;
+    bool closeAfterChat;
+    PetAssistantWindow assistantWindow;
+    readonly TypingStatistics typingStatistics;
+    TypingStatisticsWindow typingStatisticsWindow;
+    double nextTypingSave;
     readonly PetSpeechBubble speechBubble = new PetSpeechBubble();
     double previous, nextReconcile, nextTopMostRefresh;
     float SceneScale { get { return spriteWidth / 336f; } }
@@ -217,6 +223,8 @@ internal sealed class KeyboardPetWindow : Form
         bindings = PetInputBindings.Load(bindingsPath);
         inputState.MouseGain = bindings.MouseGain;
         input = new GlobalInputFeedback(inputState, () => clock.Elapsed.TotalSeconds);
+        typingStatistics = new TypingStatistics(this.dataRoot, preview);
+        inputState.TypingPressed += typingStatistics.Record;
         configPath = Path.Combine(this.dataRoot, "keyboard_pet_config.json");
         shutdown = new EventWaitHandle(false, EventResetMode.ManualReset, preview ? null : Program.ExitEventName);
         shutdown.Reset();
@@ -237,26 +245,38 @@ internal sealed class KeyboardPetWindow : Form
         Rectangle work = Screen.PrimaryScreen.WorkingArea;
         Location = new Point(ReadInt(config, "x", work.Right - Width), ReadInt(config, "y", work.Bottom - Height - 12));
         KeepVisible();
+        var interactionMenu = new ToolStripMenuItem("互动设置") { Tag = PetContextMenu.Glyph.Keys };
+        var desktopMenu = new ToolStripMenuItem("桌面设置") { Tag = PetContextMenu.Glyph.Settings };
+        var assistantMenu = new ToolStripMenuItem("AI 与助手") { Tag = PetContextMenu.Glyph.Settings };
+        var stateMenu = new ToolStripMenuItem("运行状态") { Tag = PetContextMenu.Glyph.Settings };
+        menu.Items.Add("皮肤…", null, (s, e) => OpenWardrobe()).Tag = PetContextMenu.Glyph.Hair;
+        menu.Items.Add("日历计划…", null, (s, e) => OpenCalendar()).Tag = PetContextMenu.Glyph.Settings;
+        menu.Items.Add("打字统计…", null, (s, e) => OpenTypingStatistics()).Tag = PetContextMenu.Glyph.Keys;
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.AddRange(new ToolStripItem[] { interactionMenu, desktopMenu, assistantMenu });
         var followItem = new ToolStripMenuItem("跟随键鼠动作") { Checked = follow, CheckOnClick = true, Tag = PetContextMenu.Glyph.Toggle };
         followItem.CheckedChanged += (s, e) => { follow = followItem.Checked; UpdateInputSubscription(); };
-        menu.Items.Add(followItem);
+        interactionMenu.DropDownItems.Add(followItem);
         restItem.CheckedChanged += (s, e) => { resting = restItem.Checked; UpdateInputSubscription(); };
-        menu.Items.Add(restItem);
         var musicItem = new ToolStripMenuItem("随音乐律动") { Checked = followMusic, CheckOnClick = true, Tag = PetContextMenu.Glyph.Toggle };
         musicItem.CheckedChanged += (s, e) => { followMusic = musicItem.Checked; SaveConfig(); };
-        menu.Items.Add(musicItem);
-        menu.Items.Add("与她对话…", null, (s, e) => OpenChat(ChatScene())).Tag = PetContextMenu.Glyph.Settings;
-        menu.Items.Add("AI 接口设置…", null, (s, e) => { EnsureChat(ChatScene()); chatWindow.OpenSettings(); }).Tag = PetContextMenu.Glyph.Settings;
-        var restartChat = new ToolStripMenuItem("重新开始对话", null, (s, e) => { EnsureChat(ChatScene()); chatWindow.ResetConversation(); }) { Tag = PetContextMenu.Glyph.Settings };
-        menu.Items.Add(restartChat);
+        interactionMenu.DropDownItems.Add(musicItem);
+        assistantMenu.DropDownItems.Add(new ToolStripMenuItem("与她对话…", null, (s, e) => OpenChat(ChatScene())) { Tag = PetContextMenu.Glyph.Settings, Available = false });
+        assistantMenu.DropDownItems.Add("AI 接口设置…", null, (s, e) => { EnsureChat(ChatScene()); chatWindow.OpenSettings(); }).Tag = PetContextMenu.Glyph.Settings;
+        assistantMenu.DropDownItems.Add("电脑助手设置与记录…", null, (s, e) => OpenAssistant()).Tag = PetContextMenu.Glyph.Settings;
+        var restartChat = new ToolStripMenuItem("重新开始对话", null, (s, e) => { EnsureChat(ChatScene()); chatWindow.ResetConversation(); }) { Tag = PetContextMenu.Glyph.Settings, Available = false };
+        assistantMenu.DropDownItems.Add(restartChat);
+        var stopOperation = new ToolStripMenuItem("停止当前操作", null, (s, e) => { if (chatWindow != null) chatWindow.StopOperation(); }) { Tag = PetContextMenu.Glyph.Settings };
+        assistantMenu.DropDownItems.Add(new ToolStripSeparator());
+        assistantMenu.DropDownItems.Add(stopOperation);
+        menu.Opening += (s, e) => stopOperation.Enabled = chatWindow != null && !chatWindow.IsDisposed && chatWindow.Busy;
         menu.Opening += (s, e) => restartChat.Enabled = chatWindow == null || chatWindow.IsDisposed || !chatWindow.Busy;
-        menu.Items.Add("日历计划…", null, (s, e) => OpenCalendar()).Tag = PetContextMenu.Glyph.Settings;
-        menu.Items.Add("按键与鼠标设置…", null, (s, e) =>
+        interactionMenu.DropDownItems.Add(new ToolStripSeparator());
+        interactionMenu.DropDownItems.Add("按键与鼠标设置…", null, (s, e) =>
         {
             try { using (var editor = new PetBindingEditor(bindings, bindingsPath)) editor.ShowDialog(this); }
             finally { inputState.MouseGain = bindings.MouseGain; UpdateInputSubscription(); }
         }).Tag = PetContextMenu.Glyph.Settings;
-        menu.Items.Add(new ToolStripSeparator());
         var sizes = new ToolStripMenuItem("桌宠大小") { Tag = PetContextMenu.Glyph.Size };
         foreach (int value in new[] { 252, 336, 420 })
         {
@@ -270,21 +290,7 @@ internal sealed class KeyboardPetWindow : Form
             };
             sizes.DropDownItems.Add(item);
         }
-        menu.Items.Add(sizes);
-        var hairstyles = new ToolStripMenuItem("选择发型") { Tag = PetContextMenu.Glyph.Hair };
-        foreach (int value in new[] { PetHairStyles.Short, PetHairStyles.Reference })
-        {
-            int captured = value;
-            var item = new ToolStripMenuItem(value == PetHairStyles.Short ? "利落短发" : "参考图长发 · 层次外翘") { Checked = hairStyle == value, Tag = PetContextMenu.Glyph.Choice };
-            item.Click += (s, e) =>
-            {
-                hairStyle = captured; scene.Portrait.SetHairStyle(hairStyle);
-                foreach (ToolStripMenuItem option in hairstyles.DropDownItems) option.Checked = option == item;
-                SaveConfig(); Present(true);
-            };
-            hairstyles.DropDownItems.Add(item);
-        }
-        menu.Items.Add(hairstyles);
+        desktopMenu.DropDownItems.Add(sizes);
         var keyDisplay = new ToolStripMenuItem("按键显示方式") { Tag = PetContextMenu.Glyph.Keys };
         foreach (bool bubbles in new[] { false, true })
         {
@@ -298,9 +304,9 @@ internal sealed class KeyboardPetWindow : Form
             };
             keyDisplay.DropDownItems.Add(item);
         }
-        menu.Items.Add(keyDisplay);
+        interactionMenu.DropDownItems.Insert(2,keyDisplay);
         var top = new ToolStripMenuItem("保持置顶") { Checked = true, CheckOnClick = true, Tag = PetContextMenu.Glyph.Toggle };
-        top.CheckedChanged += (s, e) => { TopMost = top.Checked; nextTopMostRefresh = 0; RestoreTopMost(); }; menu.Items.Add(top);
+        top.CheckedChanged += (s, e) => { TopMost = top.Checked; nextTopMostRefresh = 0; RestoreTopMost(); }; desktopMenu.DropDownItems.Add(top);
         RefreshStartupItem();
         startupItem.Click += (s, e) =>
         {
@@ -313,15 +319,18 @@ internal sealed class KeyboardPetWindow : Form
             }
             RefreshStartupItem();
         };
-        menu.Items.Add(startupItem);
+        desktopMenu.DropDownItems.Add(startupItem);
+        desktopMenu.DropDownItems.Add(new ToolStripSeparator());
         menu.Opening += (s, e) => RefreshStartupItem();
-        menu.Items.Add("回到屏幕右下角", null, (s, e) =>
+        desktopMenu.DropDownItems.Add("回到屏幕右下角", null, (s, e) =>
         {
             Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
             Location = new Point(area.Right - Width, area.Bottom - Height - 12); KeepVisible();
         }).Tag = PetContextMenu.Glyph.Corner;
-        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add(status);
-        menu.Items.Add(musicStatus);
+        stateMenu.DropDownItems.AddRange(new ToolStripItem[] { status, musicStatus });
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(restItem);
+        menu.Items.Add(stateMenu);
         menu.Items.Add("退出", null, (s, e) => Close()).Tag = PetContextMenu.Glyph.Exit;
         menu.ApplyTheme();
         timer.Interval = 66; timer.Tick += Tick; timer.Start();
@@ -393,7 +402,11 @@ internal sealed class KeyboardPetWindow : Form
             chat.Owner = this; chat.TopMost = TopMost;
             chat.SceneContext = ChatScene;
             chat.ReplyReady += Say;
-            chat.FormClosed += (s, e) => { if (chatWindow == chat) chatWindow = null; };
+            chat.FormClosed += (s, e) =>
+            {
+                if (chatWindow == chat) chatWindow = null;
+                if (closeAfterChat && !released && !IsDisposed) BeginInvoke(new Action(Close));
+            };
         }
     }
     internal void Say(string text)
@@ -438,6 +451,46 @@ internal sealed class KeyboardPetWindow : Form
             calendarWindow = null; calendar.Dispose(); UpdateInputSubscription(); throw;
         }
     }
+    void OpenWardrobe()
+    {
+        if(wardrobeWindow==null||wardrobeWindow.IsDisposed)
+        {
+            var window=new PetWardrobeWindow(root,hairStyle,ApplyWardrobe,preview);wardrobeWindow=window;
+            window.FormClosed+=(s,e)=>{if(wardrobeWindow==window)wardrobeWindow=null;};
+        }
+        if(wardrobeWindow.WindowState==FormWindowState.Minimized)wardrobeWindow.WindowState=FormWindowState.Normal;
+        wardrobeWindow.Show();wardrobeWindow.Activate();
+    }
+    void ApplyWardrobe(int nextHair)
+    {
+        int oldHair=hairStyle;hairStyle=PetHairStyles.Normalize(nextHair);
+        try {if(!preview)WriteConfig();}
+        catch {hairStyle=oldHair;throw;}
+        scene.Portrait.SetHairStyle(hairStyle);Present(true);
+    }
+    void OpenAssistant()
+    {
+        if (assistantWindow == null || assistantWindow.IsDisposed)
+        {
+            var window = new PetAssistantWindow(dataRoot, preview, () => { EnsureChat(ChatScene()); chatWindow.OpenSettings(); }); assistantWindow = window;
+            window.FormClosed += (s, e) => { if (assistantWindow == window) assistantWindow = null; };
+        }
+        if (assistantWindow.WindowState == FormWindowState.Minimized) assistantWindow.WindowState = FormWindowState.Normal;
+        assistantWindow.Show(); assistantWindow.Activate();
+    }
+    void OpenTypingStatistics()
+    {
+        if (typingStatisticsWindow == null || typingStatisticsWindow.IsDisposed)
+        {
+            var window = new TypingStatisticsWindow(typingStatistics, () =>
+                preview ? "预览模式：统计仅在内存中，不保存。" : resting ? "休息中：打字计数已暂停。" :
+                !follow ? "键鼠跟随已关闭：打字计数已暂停。" : !input.Enabled ? "输入监听未开启：打字计数已暂停。" : "正在统计 · 每 10 秒自动保存，退出时保存。" );
+            typingStatisticsWindow = window;
+            window.FormClosed += (s, e) => { if (typingStatisticsWindow == window) typingStatisticsWindow = null; };
+        }
+        if (typingStatisticsWindow.WindowState == FormWindowState.Minimized) typingStatisticsWindow.WindowState = FormWindowState.Normal;
+        typingStatisticsWindow.Show(); typingStatisticsWindow.Activate();
+    }
     void UpdateInputSubscription()
     {
         inputState.MouseGain = bindings.MouseGain;
@@ -446,7 +499,8 @@ internal sealed class KeyboardPetWindow : Form
         // pending keystrokes. Only the explicit follow/rest switches stop it.
         if (!Visible || !follow || resting)
         {
-            input.Dispose(); inputState.Clear();
+            input.StopAndDrain(); inputState.Clear();
+            typingStatistics.Save();
             return;
         }
         try { input.Enable(); status.Text = "键鼠实时绑定已开启"; }
@@ -460,6 +514,7 @@ internal sealed class KeyboardPetWindow : Form
         PositionChat();
         if (now >= nextTopMostRefresh) { RestoreTopMost(); nextTopMostRefresh = now + .5; }
         input.DrainPending();
+        if (now >= nextTypingSave) { typingStatistics.Save(); nextTypingSave = now + 10; }
         Point pointer=PointToClient(Cursor.Position);
         scene.ObservePointer(new PointF(pointer.X/SceneScale,pointer.Y/SceneScale),now,follow&&!resting);
         if (input.Enabled && now >= nextReconcile) { input.ReconcileReleased(); nextReconcile = now + .25; }
@@ -583,14 +638,31 @@ internal sealed class KeyboardPetWindow : Form
     {
         if (!preview)
         {
-            try { File.WriteAllText(configPath, String.Format(CultureInfo.InvariantCulture,
-                "{{\"x\":{0},\"y\":{1},\"size\":{2},\"follow\":{3},\"hairStyle\":{4},\"bubbleKeys\":{5},\"followMusic\":{6}}}", Left, Top, spriteWidth, follow ? 1 : 0, hairStyle, bubbleKeys ? 1 : 0, followMusic ? 1 : 0)); }
+            try {WriteConfig();}
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
     }
+    void WriteConfig()
+    {
+        string text=String.Format(CultureInfo.InvariantCulture,
+            "{{\"x\":{0},\"y\":{1},\"size\":{2},\"follow\":{3},\"hairStyle\":{4},\"bubbleKeys\":{5},\"followMusic\":{6}}}",
+            Left,Top,spriteWidth,follow ? 1 : 0,hairStyle,bubbleKeys ? 1 : 0,followMusic ? 1 : 0);
+        Directory.CreateDirectory(dataRoot);string temp=configPath+".tmp";File.WriteAllText(temp,text);
+        if(File.Exists(configPath))File.Replace(temp,configPath,configPath+".bak");else File.Move(temp,configPath);
+    }
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        if (chatWindow != null && !chatWindow.IsDisposed && chatWindow.Busy)
+        {
+            closeAfterChat = true; chatWindow.Close(); e.Cancel = true;
+            base.OnFormClosing(e); return;
+        }
+        if (assistantWindow != null && !assistantWindow.IsDisposed)
+        {
+            var assistant = assistantWindow; assistant.Close();
+            if (!assistant.IsDisposed) e.Cancel = true;
+        }
         // The independent calendar must flush edits before the application exits.
         // Its existing save-failure guard can cancel both window closures.
         if (calendarWindow != null && !calendarWindow.IsDisposed)
@@ -598,6 +670,12 @@ internal sealed class KeyboardPetWindow : Form
             var calendar = calendarWindow;
             calendar.Close();
             if (!calendar.IsDisposed) e.Cancel = true;
+        }
+        input.DrainPending();
+        if (!preview && !typingStatistics.Save())
+        {
+            e.Cancel = true;
+            KnightUi.ShowError(this, "打字统计保存失败", typingStatistics.Error + "\n请检查统计文件或目录权限后重试退出。");
         }
         base.OnFormClosing(e);
     }
@@ -609,9 +687,14 @@ internal sealed class KeyboardPetWindow : Form
     {
         if (disposing && !released)
         {
+            input.StopAndDrain(); typingStatistics.Save();
             released = true; timer.Stop(); timer.Dispose(); input.Dispose(); inputState.Clear(); menu.Dispose(); shutdown.Dispose();
+            inputState.TypingPressed -= typingStatistics.Record;
+            if (typingStatisticsWindow != null) { typingStatisticsWindow.Dispose(); typingStatisticsWindow = null; }
             if (calendarWindow != null) { calendarWindow.Dispose(); calendarWindow = null; }
             if (chatWindow != null) { chatWindow.Dispose(); chatWindow = null; }
+            if (assistantWindow != null) { assistantWindow.Dispose(); assistantWindow = null; }
+            if (wardrobeWindow != null) { wardrobeWindow.Dispose(); wardrobeWindow = null; }
             speechBubble.Dispose();
             if (music != null) { music.Dispose(); music = null; }
             if (surface != null) surface.Dispose();

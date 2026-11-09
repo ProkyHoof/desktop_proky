@@ -67,7 +67,7 @@ internal static class TopMostTests
             Check(Above(pet.Handle, cover.Handle), "Topmost refresh must resume after menu closes");
 
             ToolStripMenuItem top = null;
-            foreach (ToolStripItem item in menu.Items)
+            foreach (ToolStripItem item in menu.Items.Commands())
                 if (item.Text == "保持置顶") top = (ToolStripMenuItem)item;
             Check(top != null, "Topmost menu item must exist");
             top.Checked = false;

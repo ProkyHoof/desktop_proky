@@ -158,7 +158,7 @@ internal static class CalendarTests
         {
             Get<System.Windows.Forms.Timer>(pet,"timer").Stop();
             pet.StartPosition=FormStartPosition.Manual;pet.Location=Screen.PrimaryScreen.WorkingArea.Location+new Size(30,30);pet.Show();
-            var item=Get<PetContextMenu>(pet,"menu").Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="日历计划…");
+            var item=Get<PetContextMenu>(pet,"menu").Items.Commands().Single(i=>i.Text=="日历计划…");
             bool blocked=false;
             watchdog.Tick+=(s,e)=>{blocked=true;watchdog.Stop();foreach(Form form in Application.OpenForms.Cast<Form>().ToArray())if(form is PetCalendarWindow)form.Close();};
             watchdog.Start();item.PerformClick();watchdog.Stop();

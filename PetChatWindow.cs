@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -318,7 +319,11 @@ internal sealed class PetChatInput : TextBox
 
 internal sealed class PetChatWindow : Form
 {
-    readonly string settingsPath;
+    [DllImport("user32.dll", SetLastError = true)] static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
+    [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr window, int id);
+    const int StopHotkey = 0x5042;
+    bool hotkey;
+    readonly string settingsPath, dataRoot;
     readonly bool preview;
     PetChatSettings settings;
     readonly PetChatHistory history = new PetChatHistory();
@@ -341,6 +346,8 @@ internal sealed class PetChatWindow : Form
     CancellationTokenSource operation;
     bool closing, disposed, invalidSettings;
     internal Func<PetChatSettings, PetChatApi> CreateApi = s => new PetChatApi(s);
+    internal Func<string> DesktopDirectory = () => Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+    AssistantRunner assistantRunner;
     internal string LastReply { get; private set; }
     internal event Action<string> ReplyReady;
     internal bool Busy { get { return operation != null; } }
@@ -355,11 +362,12 @@ internal sealed class PetChatWindow : Form
         ShowReply(local.Greeting(SceneContext == null ? initialScene : SceneContext(), DateTime.Now));
     }
     internal void OpenSettings() { if (!Busy) Configure(this, EventArgs.Empty); }
+    internal void StopOperation() { if (operation != null) operation.Cancel(); }
 
     internal PetChatWindow(string root, bool preview = false, string context = "idle")
     {
         initialScene = context;
-        this.preview = preview; settingsPath = Path.Combine(root, "ai_chat_config.json");
+        this.preview = preview; dataRoot = root; settingsPath = Path.Combine(root, "ai_chat_config.json");
         settings = new PetChatSettings();
         if (!preview)
         {
@@ -371,7 +379,7 @@ internal sealed class PetChatWindow : Form
         StartPosition = FormStartPosition.Manual; KeyPreview = true; DoubleBuffered = true;
         BackColor = Color.Fuchsia; TransparencyKey = Color.Fuchsia; Padding = new Padding(30, 15, 30, 15);
         Controls.Add(new PetBubbleInput(input));
-        KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; DismissInput(); } };
+        KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; if (Busy) StopOperation(); else DismissInput(); } };
         input.KeyDown += InputKeyDown;
         Deactivate += (s, e) => Hide();
         SetBusy(false);
@@ -420,6 +428,19 @@ internal sealed class PetChatWindow : Form
         }
     }
     void SetBusy(bool busy) { input.Enabled = !busy && !preview; }
+    void ProgressReply(string progress)
+    {
+        if (disposed || !progress.StartsWith("步骤 ", StringComparison.Ordinal)) return;
+        if (InvokeRequired)
+        {
+            try { if (IsHandleCreated) BeginInvoke(new Action<string>(ProgressReply), progress); }
+            catch (InvalidOperationException) { if (!disposed && !Disposing && !IsDisposed) throw; }
+            return;
+        }
+        string message = progress.Contains("create_desktop_directory") ? "我在帮你创建桌面文件夹…" :
+            progress.Contains("create_document") ? "我在帮你生成文档…" : progress.Contains("export_file") || progress.Contains("deliver_to_desktop") ? "我在保存成品…" : "我在处理你交代的事情…";
+        ShowReply(message);
+    }
     void Configure(object sender, EventArgs e)
     {
         using (var editor = new PetChatSettingsWindow(settings, settingsPath))
@@ -433,6 +454,13 @@ internal sealed class PetChatWindow : Form
     {
         if (Busy || preview) return;
         string text = input.Text.Trim(); if (text.Length == 0) return;
+        try
+        {
+            var latest = PetChatSettingsStore.Load(settingsPath);
+            if (latest.BaseUrl != settings.BaseUrl || latest.Model != settings.Model || latest.ApiKey != settings.ApiKey) history.Clear();
+            settings = latest; invalidSettings = false;
+        }
+        catch (InvalidOperationException) { invalidSettings = true; }
         input.Clear(); Hide();
         if (LocalMode)
         {
@@ -440,6 +468,7 @@ internal sealed class PetChatWindow : Form
             return;
         }
         var source = new CancellationTokenSource(); operation = source; SetBusy(true);
+        hotkey = RegisterHotKey(Handle, StopHotkey, 0x4003, 0x79);
         bool committed = false;
         try
         {
@@ -447,13 +476,15 @@ internal sealed class PetChatWindow : Form
             settings.Validate(false);
             using (var api = CreateApi(settings))
             {
-                string reply = await api.ChatAsync(history.Request(settings.Personality, text), source.Token);
+                assistantRunner = new AssistantRunner();
+                string reply = await assistantRunner.Run(AssistantConfiguration.Load(dataRoot), settings, text, ProgressReply, source.Token,
+                    turn: api.ToolTurnAsync, conversation: history.Request(settings.Personality, text), desktopDirectory: DesktopDirectory);
                 source.Token.ThrowIfCancellationRequested();
                 if (disposed) return;
                 history.Commit(text, reply); committed = true; ShowReply(reply);
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { if (!disposed && !closing) ShowReply("已停止，已经产生的文件和操作记录都保留了。"); }
         catch (Exception error)
         {
             if (!disposed && !closing)
@@ -466,6 +497,7 @@ internal sealed class PetChatWindow : Form
         finally
         {
             source.Dispose(); operation = null;
+            if (hotkey && IsHandleCreated) { UnregisterHotKey(Handle, StopHotkey); hotkey = false; }
             if (!disposed) { SetBusy(false); if (closing) Close(); else if (Visible) FocusInput(); }
         }
     }
@@ -474,11 +506,17 @@ internal sealed class PetChatWindow : Form
         if (Busy) { closing = true; operation.Cancel(); e.Cancel = true; }
         base.OnFormClosing(e);
     }
+    protected override void WndProc(ref Message message)
+    {
+        if (message.Msg == 0x0312 && message.WParam.ToInt32() == StopHotkey) StopOperation();
+        base.WndProc(ref message);
+    }
     protected override void Dispose(bool disposing)
     {
         if (disposing && !disposed)
         {
             disposed = true; if (Busy) operation.Cancel(); history.Clear();
+            if (hotkey && IsHandleCreated) { UnregisterHotKey(Handle, StopHotkey); hotkey = false; }
         }
         base.Dispose(disposing);
     }

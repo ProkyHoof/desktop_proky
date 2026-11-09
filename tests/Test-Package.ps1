@@ -1,4 +1,4 @@
-param([string]$Version = '1.1.0', [switch]$SkipUi)
+param([string]$Version = '1.2.0', [switch]$SkipUi)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $temporary = Join-Path ([IO.Path]::GetFullPath($env:TEMP)) ('DesktopPet-package-test-' + [Guid]::NewGuid().ToString('N'))

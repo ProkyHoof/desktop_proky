@@ -64,8 +64,8 @@ internal static class TypingHelmetTests
             if(action.Blend>.01f&&!visible)appearances++;
             visible=action.Blend>.01f;
             if(frame==180)Check(action.Part(0)>action.Part(1)&&action.Part(1)>action.Part(2)&&action.Visor==0,"Crown approaches before its side and face rails extend");
-            if(frame==240)Check(action.Part(3)>action.Part(4)+.1f&&action.Part(4)>action.Part(5),"Face carriages slide shut before the chin locks");
-            if(frame==315)Check(action.Visor>.99f,"All panels settle into the closed knight silhouette after the slower wrap");
+            if(frame==240)Check(action.Part(3)>action.Part(4)+.1f&&action.Part(4)>action.Part(5),"Stored face carriage timing remains ordered for smooth reversal");
+            if(frame==315)Check(action.Visor>.99f,"Open helmet reaches its settled state after the slower deployment");
             if(frame==550)Check(action.Blend==0&&action.Visor==0,"Panels retract and return to the original portrait");
         }
         Check(appearances==2,"Sustained typing repeats with a quiet cooldown: "+appearances);
@@ -133,18 +133,22 @@ internal static class TypingHelmetTests
             b.InterpolationMode=InterpolationMode.Bilinear;b.PixelOffsetMode=PixelOffsetMode.HighQuality;
             foreach(int index in LivingPetPortrait.HelmetDrawOrder)sprites.Rig.Parts[TypingHelmetAction.Parts[index]].Draw(b);
             int gaps=0,interior=0;
-            for(int y=1;y<228;y++)for(int x=1;x<299;x++)
+            // The legacy closed reference still checks crown/temple seams;
+            // its former face and chin coverage is intentionally not rendered.
+            for(int y=1;y<88;y++)for(int x=1;x<299;x++)
             {
                 if(reference.GetPixel(x,y).A<249||reference.GetPixel(x-1,y).A<249||reference.GetPixel(x+1,y).A<249||
                     reference.GetPixel(x,y-1).A<249||reference.GetPixel(x,y+1).A<249)continue;
+                var point=new PointF(x,y);
+                if(sprites.Rig.Parts["helmet-face-left"].Hit(point)||sprites.Rig.Parts["helmet-face-right"].Hit(point)||sprites.Rig.Parts["helmet-chin"].Hit(point))continue;
                 interior++;if(assembled.GetPixel(x,y).A<220)gaps++;
             }
-            Check(interior>16000&&gaps==0,"Assembled plates fully cover the face with no transparent seams: "+gaps);
+            Check(interior>5000&&gaps==0,"Crown and temple armor retain their joined upper silhouette: "+gaps);
         }
         foreach(var point in new[] {new PointF(119,129),new PointF(186,134),new PointF(152,151)})
         {
-            bool covered=false;foreach(string name in TypingHelmetAction.Parts)covered|=sprites.Rig.Parts[name].Hit(point);
-            Check(covered,"Closed armor covers the original eyes and mouth");
+            bool covered=false;foreach(int index in LivingPetPortrait.HelmetDrawOrder)covered|=sprites.Rig.Parts[TypingHelmetAction.Parts[index]].Hit(point);
+            Check(!covered,"Visible armor leaves the original eyes and mouth uncovered");
         }
     }
     static int VisiblePixels(Bitmap image)
@@ -177,7 +181,7 @@ internal static class TypingHelmetTests
                 Check(Math.Abs(count-previous)<1800,"Armor coverage changes gradually rather than popping into or out of the rear layer");
                 previous=count;largest=Math.Max(largest,count);
             }
-            Check(!first&&largest>15000,"Progressive unfolding still reaches a complete opaque helmet");
+            Check(!first&&largest>7000,"Progressive unfolding retains a substantial open helmet: "+largest);
             // Hair above the registered crown must already be tucked away,
             // rather than remaining translucent over/through its top edge.
             using(var head=portrait.HeadMatrix())
@@ -239,10 +243,28 @@ internal static class TypingHelmetTests
                     Check(rear.GetPixel(px,py).A<48,"Rear hardware never protrudes through the scalp silhouette");
                 }
             }
-            foreach(var eye in new[] {new PointF(119,129),new PointF(186,134)})
+            // Check an interior facial area, not just the eye center pixels.
+            // This runs through deployment, locking and retraction, with head
+            // movement, both hairstyles and scaled scene rendering above.
+            for(int y=120;y<=153;y+=3)for(int x=112;x<=191;x+=3)
             {
-                var p=Transform(head,eye);int alpha=front.GetPixel((int)Math.Round(p.X+28),(int)Math.Round(p.Y+28)).A;
-                Check(locked ? alpha>=220 : alpha==0,locked ? "Closed wrap places opaque face plates in front of both eyes" : "Rear armor leaves both eyes exposed before wrapping forward");
+                var p=Transform(head,new PointF(x,y));int alpha=front.GetPixel((int)Math.Round(p.X+28),(int)Math.Round(p.Y+28)).A;
+                Check(alpha==0,"Armor never overlays eyes, cheeks or mouth, including the settled helmet");
+            }
+        }
+    }
+    static void AudioFaceClear(LivingPetPortrait portrait)
+    {
+        using(var image=new Bitmap(356,285,PixelFormat.Format32bppArgb))
+        using(var g=Graphics.FromImage(image))
+        using(var head=portrait.HeadMatrix())
+        {
+            g.TranslateTransform(28,28);g.MultiplyTransform(head);
+            typeof(LivingPetPortrait).GetMethod("DrawArmoredMusic",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(portrait,new object[] {g});
+            for(int y=120;y<=153;y+=3)for(int x=112;x<=191;x+=3)
+            {
+                var p=Transform(head,new PointF(x,y));
+                Check(image.GetPixel((int)Math.Round(p.X+28),(int)Math.Round(p.Y+28)).A==0,"Audio lights and meters stay outside the facial opening");
             }
         }
     }
@@ -265,7 +287,7 @@ internal static class TypingHelmetTests
                         if(frame%6==0){input.Key(65,true,now);input.Key(65,false,now+.005);}
                         scene.Advance(now,1/30.0,false);
                         if(frame>=150&&frame%10==0||frame==315)Bounds(scene,now);
-                        if(frame==180||frame==315)Occlusion(scene.Portrait,frame==315);
+                        if(frame>=150&&frame%10==0||frame==315)Occlusion(scene.Portrait,frame==315);
                     }
                     Check(scene.Portrait.HelmetVisor>.99f&&scene.Hands.Typing,"Real short taps assemble the helmet while hands keep typing");
                     Check(scene.Hit(scene.Portrait.WorldPoint(new PointF(152,140)),false,true),"Assembled armor participates in alpha hit testing");
@@ -273,13 +295,22 @@ internal static class TypingHelmetTests
                     for(int frame=316;frame<=480;frame++)
                     {
                         scene.Advance(frame/30.0,1/30.0,false);
-                        if(frame%10==0)Bounds(scene,frame/30.0);
+                        if(frame%10==0){Bounds(scene,frame/30.0);Occlusion(scene.Portrait,false);}
                     }
                     Check(scene.Portrait.HelmetBlend==0,"Pausing input finishes the removal");
                     scene.Advance(0,0,false);Check(scene.Portrait.HelmetBlend==0,"Time reset clears transient armor");
                 }
+                using(var portrait=new LivingPetPortrait(sprites))
+                {
+                    portrait.SetHairStyle(style);
+                    for(int frame=0;frame<=400;frame++)
+                    {
+                        portrait.Update(frame/30.0,1/30.0,false,true,false,WorkMood.Turbo,600,true,.8f);
+                        if(frame>=150&&frame%15==0){Occlusion(portrait,frame>=315);AudioFaceClear(portrait);}
+                    }
+                }
             }
         }
-        Console.WriteLine("PASS: gradual armor coverage, tucked crown hair, outer approach rails, ordered retraction, rear/front occlusion, stop continuity, sealed seams, 15/60 fps, both hairstyles and three sizes.");
+        Console.WriteLine("PASS: open-face crown/temple armor, clear eyes/cheeks/mouth through deployment/retraction and audio lighting, tucked hair, rails, stop continuity, upper seams, 15/60 fps, both hairstyles and three sizes.");
     }
 }

@@ -10,11 +10,6 @@ internal static class HairstyleTests
 {
     const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     static void Check(bool value,string message){if(!value)throw new Exception("Hairstyle: "+message);}
-    static ToolStripMenuItem Menu(KeyboardPetWindow pet)
-    {
-        var menu=(ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(pet);
-        return menu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text=="选择发型");
-    }
     internal static void Run(string root)
     {
         using(var sprites=new KeyboardPetSprites(root))
@@ -96,7 +91,7 @@ internal static class HairstyleTests
             }
         }
 
-        // Save/reload through the real menu in an isolated configuration,
+        // Save/reload through the unified wardrobe in an isolated configuration,
         // keeping the user's window, bindings and saved selection untouched.
         string isolated=Path.Combine(Path.GetTempPath(),"DesktopPet.HairstyleTests."+Guid.NewGuid().ToString("N"));
         try
@@ -114,12 +109,12 @@ internal static class HairstyleTests
             File.WriteAllText(config,"{\"x\":0,\"y\":0,\"size\":336,\"follow\":0,\"hairStyle\":0}");
             using(var pet=new KeyboardPetWindow(isolated))
             {
-                var original=pet.scene;var menu=Menu(pet);
-                var display=((ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(pet)).Items
-                    .OfType<ToolStripMenuItem>().Single(item=>item.Text=="按键显示方式");
+                var original=pet.scene;
+                typeof(KeyboardPetWindow).GetMethod("OpenWardrobe",Private).Invoke(pet,null);
+                var wardrobe=(PetWardrobeWindow)typeof(KeyboardPetWindow).GetField("wardrobeWindow",Private).GetValue(pet);
+                var display=((ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(pet)).Items.Commands().Single(item=>item.Text=="按键显示方式");
                 Check(!pet.inputState.BubbleMode,"Old configuration defaults to fixed input frame");
-                var musicToggle=((ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(pet)).Items
-                    .OfType<ToolStripMenuItem>().Single(item=>item.Text=="随音乐律动");
+                var musicToggle=((ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(pet)).Items.Commands().Single(item=>item.Text=="随音乐律动");
                 Check(musicToggle.Checked,"Old configuration enables music by default");
                 musicToggle.PerformClick();
                 Check(File.ReadAllText(config).Contains("\"followMusic\":0"),"Music toggle saves its independent preference immediately");
@@ -131,10 +126,9 @@ internal static class HairstyleTests
                 ((ToolStripMenuItem)display.DropDownItems[1]).PerformClick();
                 Check(pet.scene.Portrait.HairStyle==PetHairStyles.Short,"Load a saved short style");
                 pet.inputState.Key(65,true,0);
-                ((ToolStripMenuItem)menu.DropDownItems[1]).PerformClick();
-                Check(pet.scene==original&&pet.scene.Portrait.HairStyle==PetHairStyles.Reference,"Menu switches style without resetting the scene");
+                wardrobe.SelectHairStyle(PetHairStyles.Reference);wardrobe.ApplySelection();
+                Check(pet.scene==original&&pet.scene.Portrait.HairStyle==PetHairStyles.Reference,"Wardrobe switches style without resetting the scene");
                 Check(pet.inputState.HeldKeys.Contains(65),"Switching style preserves active input");
-                Check(menu.DropDownItems.OfType<ToolStripMenuItem>().Count(i=>i.Checked)==1,"Only the selected style is checked");
                 foreach(int width in new[] {252,336,420})
                 {
                     typeof(KeyboardPetWindow).GetMethod("SetSpriteSize",Private).Invoke(pet,new object[] {width});
@@ -144,13 +138,12 @@ internal static class HairstyleTests
                     using(var g=Graphics.FromImage(image))
                     {pet.DrawSceneAt(g,0);Check(image.GetPixel(0,0).A==0,"Long hair retains transparent window edges at every size");}
                 }
-                Check(File.ReadAllText(config).Contains("\"hairStyle\":1"),"Menu saves selection immediately");
+                Check(File.ReadAllText(config).Contains("\"hairStyle\":1"),"Wardrobe saves selection on Apply");
             }
             using(var reload=new KeyboardPetWindow(isolated,true))
             {
                 Check(reload.scene.Portrait.HairStyle==PetHairStyles.Reference&&reload.inputState.BubbleMode,"Restart restores hairstyle and bubble mode");
-                var musicToggle=((ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(reload)).Items
-                    .OfType<ToolStripMenuItem>().Single(item=>item.Text=="随音乐律动");
+                var musicToggle=((ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(reload)).Items.Commands().Single(item=>item.Text=="随音乐律动");
                 Check(!musicToggle.Checked,"Restart preserves disabled music preference");
             }
             File.WriteAllText(config,"{\"hairStyle\":999}");
@@ -167,6 +160,6 @@ internal static class HairstyleTests
                 throw new InvalidOperationException("Unexpected hairstyle test directory");
             if(Directory.Exists(resolved))Directory.Delete(resolved,true);
         }
-        Console.WriteLine("PASS: hairstyle silhouettes/hit masks, torso/keyboard depth in three sizes and poses, menu selection, immediate persistence, restart and legacy config.");
+        Console.WriteLine("PASS: hairstyle silhouettes/hit masks, torso/keyboard depth in three sizes and poses, wardrobe selection, persistence, restart and legacy config.");
     }
 }

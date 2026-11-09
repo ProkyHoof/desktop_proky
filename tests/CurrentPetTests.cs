@@ -95,10 +95,9 @@ internal static class WindowEdgeTests
         {
             ((System.Windows.Forms.Timer)typeof(KeyboardPetWindow).GetField("timer",Private).GetValue(pet)).Stop();
             var menu=(ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(pet);
-            ToolStripMenuItem hairstyles=null,sizes=null,corner=null;
-            foreach(ToolStripItem item in menu.Items)
+            ToolStripMenuItem sizes=null,corner=null;
+            foreach(ToolStripItem item in menu.Items.Commands())
             {
-                if(item.Text=="选择发型")hairstyles=(ToolStripMenuItem)item;
                 if(item.Text=="桌宠大小")sizes=(ToolStripMenuItem)item;
                 if(item.Text=="回到屏幕右下角")corner=(ToolStripMenuItem)item;
             }
@@ -107,7 +106,7 @@ internal static class WindowEdgeTests
             Check(pet.Right==workingArea.Right,"Corner action reaches the screen edge without a fixed right inset");
             foreach(int style in new[] {0,1})
             {
-                ((ToolStripMenuItem)hairstyles.DropDownItems[style]).PerformClick();
+                typeof(KeyboardPetWindow).GetMethod("ApplyWardrobe",Private).Invoke(pet,new object[] {style});
                 for(int size=0;size<3;size++)
                 {
                     ((ToolStripMenuItem)sizes.DropDownItems[size]).PerformClick();

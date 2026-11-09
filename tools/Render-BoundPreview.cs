@@ -42,7 +42,7 @@ internal static class BoundPreview
                         if(snapshot)
                         {
                             int x=column*280,y=style*390;
-                            string label=new[] {"耳机听音乐 / 快速打字","头梁收起 / 装甲接入","灯环与面甲音量条","机甲退下 / 恢复耳机"}[column];
+                            string label=new[] {"耳机听音乐 / 快速打字","头梁收起 / 装甲接入","耳侧灯环与音量条","机甲退下 / 恢复耳机"}[column];
                             sg.DrawString((style==0 ? "短发 · " : "长发 · ")+label,font,Brushes.DarkSlateGray,x+8,y+12);
                             saved=sg.Save();sg.TranslateTransform(x+8,y+32);sg.ScaleTransform(.75f,.75f);scene.Draw(sg,now,false,true);sg.Restore(saved);
                         }
@@ -112,7 +112,7 @@ internal static class BoundPreview
                         scene.Advance(now,1/30.0,false);
                         if(frame!=120&&frame!=165&&frame!=195&&frame!=225&&frame!=255&&frame!=315&&frame!=435&&frame!=550)continue;
                         int x=column%4*280,y=(style*2+column/4)*380;
-                        g.DrawString((style==0 ? "短发 · " : "长发 · ")+new[] {"正常打字","顶甲开始铺展","顶甲贴合头顶","侧甲贴合两侧","面甲向中间包合","完整包覆锁定","面甲沿外侧退回","顶甲收回"}[column],font,Brushes.DarkSlateGray,x+12,y+12);
+                        g.DrawString((style==0 ? "短发 · " : "长发 · ")+new[] {"正常打字","顶甲开始铺展","顶甲贴合头顶","侧甲贴合两侧","侧甲就位 · 面部露出","开放头盔锁定","侧甲沿外侧退回","顶甲收回"}[column],font,Brushes.DarkSlateGray,x+12,y+12);
                         var saved=g.Save();g.TranslateTransform(x+7,y+32);g.ScaleTransform(.75f,.75f);
                         scene.Draw(g,now,false,true);g.Restore(saved);column++;
                     }
@@ -145,7 +145,7 @@ internal static class BoundPreview
                         {int key=frame%8==0 ? 65 : 74;inputs[style].Key(key,true,now);inputs[style].Key(key,false,now+.005);}
                         scenes[style].Advance(now,.05,false);
                         var pose=scenes[style].Portrait;
-                        string phase=pose.HelmetBlend<=0 ? "打字" : pose.HelmetRemoving ? "沿头部外侧退回" : pose.HelmetVisor<.99f ? "沿头部外侧包覆" : "完整包覆锁定";
+                        string phase=pose.HelmetBlend<=0 ? "打字" : pose.HelmetRemoving ? "沿头部外侧退回" : pose.HelmetVisor<.99f ? "沿头部外侧展开" : "开放头盔锁定";
                         g.DrawString((style==0 ? "短发" : "长发")+" · "+phase,font,Brushes.DarkSlateGray,style*264+12,4);
                         var saved=g.Save();g.TranslateTransform(style*264,25);g.ScaleTransform(.75f,.75f);
                         scenes[style].Draw(g,now,false,true);g.Restore(saved);

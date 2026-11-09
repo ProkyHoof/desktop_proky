@@ -172,9 +172,14 @@ internal static class UiPreview
             var flags=BindingFlags.Instance|BindingFlags.NonPublic;
             ((Timer)typeof(KeyboardPetWindow).GetField("timer",flags).GetValue(pet)).Stop();
             var menu=(ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",flags).GetValue(pet);
-            var hair=menu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text=="选择发型");
-            hair.Select();hair.DropDownItems[1].Select();
-            using(var main=Render(menu))using(var child=Render(hair.DropDown))
+            foreach(string label in new[] {"互动设置","桌面设置","AI 与助手","运行状态"})
+            {
+                var group=menu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text==label);
+                using(var image=Render(group.DropDown))image.Save(Path.Combine(output,"current-menu-"+label+".png"),ImageFormat.Png);
+            }
+            var wardrobe=menu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text=="皮肤…");
+            wardrobe.Select();
+            using(var main=Render(menu))
             using(var settings=Render(editor))using(var alert=Render(error))
             using(var keys=new Bitmap(352,140))using(var kg=Graphics.FromImage(keys))
             using(var sheet=new Bitmap(1100,1060))using(var g=Graphics.FromImage(sheet))
@@ -182,8 +187,8 @@ internal static class UiPreview
             {
                 settings.Save(Path.Combine(output,"current-settings.png"),ImageFormat.Png);
                 alert.Save(Path.Combine(output,"current-dialog.png"),ImageFormat.Png);
-                using(var menus=new Bitmap(main.Width+child.Width+48,main.Height+32))using(var mg=Graphics.FromImage(menus))
-                {mg.Clear(Color.FromArgb(234,234,233));mg.DrawImageUnscaled(main,16,16);mg.DrawImageUnscaled(child,main.Width+24,16+hair.Bounds.Top);menus.Save(Path.Combine(output,"current-menu.png"),ImageFormat.Png);}
+                using(var menus=new Bitmap(main.Width+32,main.Height+32))using(var mg=Graphics.FromImage(menus))
+                {mg.Clear(Color.FromArgb(234,234,233));mg.DrawImageUnscaled(main,16,16);menus.Save(Path.Combine(output,"current-menu.png"),ImageFormat.Png);}
                 var state=new InputFeedbackState();
                 using(var sprites=new KeyboardPetSprites(root))using(var scene=new BoundPetScene(sprites,new PetInputBindings(),state))
                 {
@@ -198,7 +203,7 @@ internal static class UiPreview
                 int settingsX=430,settingsY=92,settingsHeight=600,settingsWidth=(int)(settings.Width*600.0/settings.Height);
                 using(var ink=new SolidBrush(KnightUi.Ink))
                 {g.DrawString("白发小骑士  /  UI 样式",font,ink,24,18);g.DrawString("紧凑菜单",font,ink,24,58);g.DrawString("按键绑定与鼠标反馈",font,ink,settingsX,58);g.DrawString("按键提示 · 固定框 / 冒泡",font,ink,24,710);g.DrawString("提示对话框",font,ink,settingsX,710);}
-                g.DrawImageUnscaled(main,24,92);g.DrawImageUnscaled(child,24,92+main.Height+12);
+                g.DrawImageUnscaled(main,24,92);
                 g.DrawImage(settings,new Rectangle(settingsX,settingsY,settingsWidth,settingsHeight));g.DrawImageUnscaled(keys,10,752);g.DrawImage(alert,new Rectangle(settingsX,752,480,(int)(alert.Height*480.0/alert.Width)));
                 sheet.Save(Path.Combine(output,"current-ui.png"),ImageFormat.Png);
             }

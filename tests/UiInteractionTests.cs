@@ -24,7 +24,9 @@ internal static class UiInteractionTests
         {
             Get<Timer>(pet,"timer").Stop();var menu=Get<PetContextMenu>(pet,"menu");
             var work=new Rectangle(0,0,1920,1080);
-            pet.Location=new Point(1200,300);var anchor=pet.MenuAnchor(work);
+            // Leave room below for the expanded menu; edge clamping is tested separately.
+            int menuTop=Math.Max(work.Top,Math.Min(300,work.Bottom-menu.Height));
+            pet.Location=new Point(1200,menuTop);var anchor=pet.MenuAnchor(work);
             Check(anchor.X+menu.Width<pet.Left&&anchor.Y==pet.Top,"Menu anchors to the pet's left and top");
             pet.Location=new Point(0,300);anchor=pet.MenuAnchor(work);
             Check(anchor.X>pet.Right,"Left edge moves the menu to the right of the pet");
@@ -151,7 +153,7 @@ internal static class UiInteractionTests
         {
             Get<System.Windows.Forms.Timer>(pet,"timer").Stop();
             var menu=Get<PetContextMenu>(pet,"menu");
-            menu.Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="跟随键鼠动作").Checked=true;
+            menu.Items.Commands().Single(i=>i.Text=="跟随键鼠动作").Checked=true;
             pet.StartPosition=FormStartPosition.Manual;pet.Location=new Point(-30000,-30000);pet.Show();Application.DoEvents();
             var hook=Get<GlobalInputFeedback>(pet,"input");
             Check(hook.Enabled&&hook.ProbePump(),"Input worker starts before opening auxiliary windows");
@@ -175,7 +177,8 @@ internal static class UiInteractionTests
                 down.Invoke(pet,new object[] {new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)});
                 up.Invoke(pet,new object[] {new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)});
                 Check(bubble.Visible&&bubble.LastReply!=firstLine&&Get<TextBox>(bubble,"input").Text=="保留草稿","Another character click changes the line while keeping the input and draft visible");
-                menu.Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="与她对话…").PerformClick();
+                down.Invoke(pet,new object[] {new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)});
+                up.Invoke(pet,new object[] {new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)});
                 Check(Get<PetChatWindow>(pet,"chatWindow")==bubble,"Repeated entry reuses the same bubble");
                 var area=Screen.FromControl(pet).WorkingArea;
                 pet.Location=new Point(area.Left+50,area.Top+150);
@@ -186,14 +189,14 @@ internal static class UiInteractionTests
                 // same settings handler directly without enabling networking.
                 CheckModalInput(pet,typeof(PetChatSettingsWindow),()=>typeof(PetChatWindow).GetMethod("Configure",Private).Invoke(chat,new object[] {null,EventArgs.Empty}));
             });
-            CheckModalInput(pet,typeof(PetBindingEditor),()=>menu.Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="按键与鼠标设置…").PerformClick());
-            menu.Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="日历计划…").PerformClick();
+            CheckModalInput(pet,typeof(PetBindingEditor),()=>menu.Items.Commands().Single(i=>i.Text=="按键与鼠标设置…").PerformClick());
+            menu.Items.Commands().Single(i=>i.Text=="日历计划…").PerformClick();
             var worker=Get<Thread>(hook,"worker");QueueTyping(hook);hook.DrainPending();
             Check(hook.Enabled&&hook.ProbePump(),"Calendar leaves input active alongside other windows");
-            var rest=menu.Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="闭眼休息");
+            var rest=menu.Items.Commands().Single(i=>i.Text=="闭眼休息");
             rest.Checked=true;Check(!hook.Enabled&&!pet.inputState.HasKeys,"Explicit rest still stops and clears input with calendar open");
             rest.Checked=false;Check(hook.Enabled,"Leaving rest resumes input with calendar open");
-            var follow=menu.Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="跟随键鼠动作");
+            var follow=menu.Items.Commands().Single(i=>i.Text=="跟随键鼠动作");
             follow.Checked=false;Check(!hook.Enabled,"Explicit follow opt-out remains effective");
             follow.Checked=true;Check(hook.Enabled,"Enabling follow works with calendar open");
             worker=Get<Thread>(hook,"worker");QueueTyping(hook);Get<PetCalendarWindow>(pet,"calendarWindow").Close();
@@ -218,7 +221,7 @@ internal static class UiInteractionTests
             {
                 Get<Timer>(pet,"timer").Stop();
                 var menu=Get<PetContextMenu>(pet,"menu");
-                var item=menu.Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="开机自启动");
+                var item=menu.Items.Commands().Single(i=>i.Text=="开机自启动");
                 Check(item.Enabled&&!item.Checked,"Startup option is available and initially unchecked");
                 item.PerformClick();
                 Check(item.Checked&&registration.Enabled,"Menu enables actual Windows registration immediately");
@@ -228,13 +231,13 @@ internal static class UiInteractionTests
                 using(var reload=new KeyboardPetWindow(root,false,new PetStartupRegistration(executable,keyPath)))
                 {
                     Get<Timer>(reload,"timer").Stop();
-                    var restored=Get<PetContextMenu>(reload,"menu").Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="开机自启动");
+                    var restored=Get<PetContextMenu>(reload,"menu").Items.Commands().Single(i=>i.Text=="开机自启动");
                     Check(restored.Checked,"Restart restores startup state from Windows");
                 }
                 using(var preview=new KeyboardPetWindow(root,true,registration))
                 {
                     Get<Timer>(preview,"timer").Stop();
-                    var disabled=Get<PetContextMenu>(preview,"menu").Items.OfType<ToolStripMenuItem>().Single(i=>i.Text=="开机自启动");
+                    var disabled=Get<PetContextMenu>(preview,"menu").Items.Commands().Single(i=>i.Text=="开机自启动");
                     disabled.PerformClick();
                     Check(disabled.Checked&&!disabled.Enabled&&registration.Enabled,"Preview displays state but cannot change startup");
                 }

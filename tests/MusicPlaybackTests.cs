@@ -83,7 +83,7 @@ internal static class MusicPlaybackTests
         using(var pet=new KeyboardPetWindow(root,true))
         {
             var menu=(ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(pet);
-            var toggle=menu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text=="随音乐律动");
+            var toggle=menu.Items.Commands().Single(item=>item.Text=="随音乐律动");
             bool original=toggle.Checked;toggle.PerformClick();
             Check(toggle.Checked!=original,"Independent music preference can be toggled");
             Check(typeof(KeyboardPetWindow).GetField("music",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(pet)==null,"Previews never listen to actual system output");

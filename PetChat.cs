@@ -104,7 +104,7 @@ internal sealed class PetChatSettings
 {
     internal string BaseUrl = "https://api.openai.com/v1", ApiKey = "", Model = "gpt-4o-mini";
     internal string AudioBaseUrl = "", AudioApiKey = "", TranscriptionModel = "whisper-1", SpeechModel = "tts-1", Voice = "nova";
-    internal string Personality = "你是一位温柔、俏皮、有自己想法的 AI 女友，以第一人称‘我’和用户自然交谈。像恋人日常聊天一样关心、倾听、分享心情，可以适度撒娇，偶尔称呼‘亲爱的’，不要每句都重复昵称或说教。不要以骑士、守卫或任务执行者的身份自称，不使用站岗、补给、出征等角色台词。用自然亲昵的中文，通常简短回答，适合语音交流。不要使用舞台动作或复杂 Markdown。不假装能看到屏幕或执行电脑操作；你只能收到用户主动发送的文字和语音转写。";
+    internal string Personality = "你是一位温柔、俏皮、有自己想法的 AI 女友，以第一人称‘我’和用户自然交谈。像恋人日常聊天一样关心、倾听、分享心情，可以适度撒娇，偶尔称呼‘亲爱的’，不要每句都重复昵称或说教。不要以骑士、守卫或任务执行者的身份自称，不使用站岗、补给、出征等角色台词。用自然亲昵的中文，通常简短回答，适合语音交流。不要使用舞台动作或复杂 Markdown。不假装能看到屏幕；可以通过已提供的工具完成用户明确要求的电脑操作，只按真实执行结果汇报。";
     internal int VoiceThreshold = 650, SilenceMilliseconds = 1000;
     internal bool ReadReplies = true;
     internal string EffectiveAudioBase { get { return String.IsNullOrWhiteSpace(AudioBaseUrl) ? BaseUrl : AudioBaseUrl; } }
@@ -249,6 +249,31 @@ internal sealed class PetChatApi : IDisposable
                 return reply.Trim();
             }
             catch (Exception e) { if (e is KeyNotFoundException || e is InvalidCastException || e is IndexOutOfRangeException || e is FormatException) throw new InvalidOperationException("聊天接口未返回有效的 choices[0].message.content 文本。请检查接口兼容性和模型。", e); throw; }
+        }
+    }
+    internal async Task<Dictionary<string, object>> ToolTurnAsync(List<object> messages, CancellationToken token)
+    {
+        settings.Validate(false);
+        var payload = new Dictionary<string, object> { {"model", settings.Model}, {"messages", messages}, {"tools", AssistantTools.Definitions()}, {"stream", false} };
+        if (PetChatProvider.Detect(settings.BaseUrl) == 2) payload["thinking"] = new { type = "disabled" };
+        using (var content = Json(payload))
+        {
+            byte[] response;
+            try { response = await Send(settings.BaseUrl, "chat/completions", settings.ApiKey, content, 2 * 1024 * 1024, token).ConfigureAwait(false); }
+            catch (InvalidOperationException error)
+            {
+                if (error.Message.Contains("HTTP 400") || error.Message.Contains("HTTP 422"))
+                    throw new InvalidOperationException(error.Message + "当前模型需支持工具调用，请检查 AI 接口设置。", error);
+                throw;
+            }
+            var data = Parse(response);
+            var choices = data.ContainsKey("choices") ? data["choices"] as IList : null;
+            if (choices == null || choices.Count == 0) throw new InvalidOperationException("AI 接口未返回有效消息。");
+            var choice = choices[0] as Dictionary<string, object>;
+            if (choice == null || !choice.ContainsKey("message") || !(choice["message"] is Dictionary<string, object>)) throw new InvalidOperationException("AI 接口未返回有效消息。");
+            object reason;
+            if (choice.TryGetValue("finish_reason", out reason) && (string)reason == "length") throw new InvalidOperationException("模型输出被截断，操作已停止，现场保留。");
+            return (Dictionary<string, object>)choice["message"];
         }
     }
     internal async Task<string> TranscribeAsync(byte[] wav, CancellationToken token)

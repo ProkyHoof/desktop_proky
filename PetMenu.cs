@@ -34,10 +34,11 @@ internal sealed class PetContextMenu : ContextMenuStrip
         int width = Px(root ? 234 : 216);
         int height = Px(8);
         foreach (ToolStripItem item in dropDown.Items)
-            width = Math.Max(width, TextRenderer.MeasureText(item.Text, Font).Width + Px(58));
+            if (item.Available) width = Math.Max(width, TextRenderer.MeasureText(item.Text, Font).Width + Px(58));
         dropDown.MinimumSize = new Size(width, 0);
         foreach (ToolStripItem item in dropDown.Items)
         {
+            if (!item.Available) continue;
             item.AutoSize = false;
             item.Margin = Padding.Empty;
             bool status = item.Tag is Glyph && (Glyph)item.Tag == Glyph.Status;
