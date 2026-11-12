@@ -1,4 +1,4 @@
-param([string]$Version = '1.2.0', [switch]$SkipUi)
+﻿param([string]$Version = '1.3.0', [switch]$SkipUi)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $temporary = Join-Path ([IO.Path]::GetFullPath($env:TEMP)) ('DesktopPet-package-test-' + [Guid]::NewGuid().ToString('N'))
@@ -32,12 +32,15 @@ try {
     . (Join-Path $temporary 'payload/PackageSupport.ps1')
     $manifest = Read-PetManifest (Join-Path $temporary 'payload')
     Check ($manifest.version -eq $Version) 'Incorrect installer version.'
+    $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $temporary 'payload/DesktopPet.exe'))
+    Check ($versionInfo.ProductName -eq '桌宠助手' -and $versionInfo.FileDescription -eq '桌宠助手') 'Application metadata still uses the old name.'
     try { [void](Resolve-PetInstallPath ([IO.Path]::GetPathRoot($temporary))); throw 'Root directory was accepted.' }
     catch { if ($_.Exception.Message -eq 'Root directory was accepted.') { throw } }
     if (-not $SkipUi) {
         [void](Resolve-PetInstallPath $installed)
         Test-PetWritableDirectory $installed
         $form = New-PetInstallForm $installed $true $false
+        Check ($form.Text -eq '安装桌宠助手') 'Installer still uses the old display name.'
         $form.Icon = [Drawing.Icon]::ExtractAssociatedIcon((Join-Path $temporary 'payload/DesktopPet.exe'))
         try {
         Check $form.Controls['DesktopShortcut'].Checked 'Desktop shortcut should be enabled by default.'

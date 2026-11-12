@@ -240,6 +240,7 @@ internal sealed class InputFeedbackState
 
     internal void Key(int code, bool down, double now, DateTime? localAt = null, bool recordTyping = true)
     {
+        if (code == 0) return;
         Revision++; keyPulseUntil = now + .24;
         if (down)
         {
@@ -463,6 +464,7 @@ internal sealed class GlobalInputFeedback : IDisposable
     }
     void ApplyKey(KeyboardData input,int m,double t,DateTime localAt)
     {
+                if (input.Key == 0) return;
                 int key = (int)input.Key;
                 if (key == 13 && (input.Flags & 1) != 0) key = 269;
                 if ((input.Flags & 1) == 0)
@@ -541,6 +543,14 @@ internal static class InputFeedbackTests
     {
         TypingWorkTests.Run();
         var s = new InputFeedbackState();
+        s.Key(0,true,0);s.Key(0,false,.01);
+        Check(!s.HasKeys&&!s.HasKeyboardActivity(.02)&&s.KeyDisplay(.02)=="","无效零键码不产生按键显示或动画");
+        s.Key(112,true,.1);s.Key(0,true,.11);s.Key(112,false,.12);s.Key(0,false,.95);
+        Check(s.KeyDisplay(.2)=="F1"&&s.KeyDisplay(1.1)=="","零键码不污染 F1 或延长显示时间");
+        s.Clear();s.SetBubbleMode(true);
+        s.Key(0,true,0);s.Key(112,true,.1);s.Key(112,false,.12);s.Key(0,false,.2);
+        Check(s.Floating(.3).Single().Label=="F1","冒泡过滤零键码，正常 F1 气泡保留");
+        s.SetBubbleMode(false);s.Clear();
         s.Key(65, true, 0); s.Key(65, false, .001);
         Check(s.LiveChord == "" && s.KeyDisplay(.016) == "A" && s.HasKeyboardActivity(.016), "1ms 点按释放后仍在固定框短暂显示");
         s.Clear(); s.Key(162, true, .1); s.Key(160, true, .11); s.Key(83, true, .12);
@@ -585,6 +595,9 @@ internal static class InputFeedbackTests
         s.Clear();
         using (var hook = new GlobalInputFeedback(s, () => 10))
         {
+            Dispatch(hook,"Keyboard",0x100,new TestKey {Key=0,Scan=0x47});
+            Dispatch(hook,"Keyboard",0x101,new TestKey {Key=0,Scan=0x47});
+            Check(!s.HasKeys&&s.KeyDisplay(10)=="","原生零键码在扫描码映射之前丢弃");
             Dispatch(hook, "Keyboard", 0x104, new TestKey { Key = 164 });
             Dispatch(hook, "Keyboard", 0x100, new TestKey { Key = 13, Flags = 1 });
             Check(s.LiveChord == "Alt + NumEnter", "系统按键与扩展 Enter 解码");

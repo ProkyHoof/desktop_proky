@@ -1,0 +1,9 @@
+{
+  "generator": "Built-in image_gen",
+  "use_case": "precise-object-edit",
+  "original": "silver-knight-source.png",
+  "generated_mask": "silver-knight-original-jaw-mask.png",
+  "source": "silver-knight-original-jaw-source.png",
+  "prompt": "Use case: precise-object-edit. Input image is the ORIGINAL closed silver helmet, the authoritative edit target. User correction: keep the ORIGINAL JAWLINE EXACTLY; do not redraw, slim, round, smooth, bevel, or reshape it. Delete only the broad opaque left/right lower faceplates and central nose/face/chin badge surfaces so an existing character's eyes, cheeks, nose and mouth can be seen through a genuinely transparent opening. Crucially retain the ORIGINAL LOWER GRAY JAW FLANGES underneath the diagonal black borders at left and right, including their full original thickness, angular contour, flat gray shading and black edges, and original bottom V exterior outline. Do not replace them with a continuous thin shiny U frame. The large transparent face aperture should reach the top inner edges of those ORIGINAL gray jaw flanges, while leaving those flanges and exterior outline intact. Remove central badge area but preserve original exterior bottom edge. Retain every upper crown and brow/temple detail unchanged. Same scale, position, silhouette and canvas as original. The only editing operation is erasing face-covering material to transparency: do not recolor or move any retained material. Helmet only, no human face, no hair, no body, no text or markings. Real alpha transparent background and face opening.",
+  "registration": "tools/Prepare-Helmet.ps1 uses generated alpha as an erase-only mask over original pixels. All retained colors and facets are copied unchanged from the original; original exterior jaw outline is protected. Registers six animated parts on the original 900x687 rig canvas."
+}

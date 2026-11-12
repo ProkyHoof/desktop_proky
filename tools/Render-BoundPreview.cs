@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -7,6 +7,78 @@ using System.Linq;
 
 internal static class BoundPreview
 {
+    static void HackerCodeFrames(string root,string output)
+    {
+        Directory.CreateDirectory(output);
+        using(var sprites=new KeyboardPetSprites(root))
+        using(var image=new Bitmap(704,420,PixelFormat.Format32bppArgb))
+        using(var g=Graphics.FromImage(image))
+        using(var font=new Font("Microsoft YaHei UI",12,FontStyle.Bold))
+        {
+            var input=new InputFeedbackState();
+            using(var scene=new BoundPetScene(sprites,new PetInputBindings(),input))
+            {
+                scene.SetViewWidth(BoundPetScene.CompactWidth);scene.SetTone(3);scene.SetKeyboardStyle(4);scene.SetMouseStyle(3);scene.SetPadStyle(2);
+                scene.SetMusicStyle(PetMusicStyles.HackerCode);scene.Portrait.SetHeadwearStyle(2);scene.Portrait.SetListeningStyle(2);scene.Portrait.SetHairStyle(2);
+                scene.MusicPlaying=true;scene.MusicLevel=.2f;
+                for(int frame=0;frame<360;frame++)
+                {
+                    double now=frame/30.0;
+                    if(frame%3==0){input.Key(65,true,now);input.Key(65,false,now+.001);}
+                    scene.Advance(now,1/30.0,false);
+                }
+                for(int frame=0;frame<100;frame++)
+                {
+                    double now=12+frame*.05;
+                    if(frame%2==0){input.Key(65,true,now);input.Key(65,false,now+.001);}
+                    scene.MusicLevel=(float)(.15+.1*Math.Sin(now*2));scene.Advance(now,.05,false);
+                    g.Clear(Color.FromArgb(241,245,248));
+                    using(var dark=new SolidBrush(Color.FromArgb(19,26,41)))g.FillRectangle(dark,352,0,352,420);
+                    for(int column=0;column<2;column++)
+                    {
+                        g.DrawString(column==0 ? "黑客代码流 · 浅色背景" : "黑客代码流 · 深色背景",font,column==0 ? Brushes.DarkSlateGray : Brushes.WhiteSmoke,column*352+14,12);
+                        var state=g.Save();g.TranslateTransform(column*352,0);scene.Draw(g,now,false,false);g.Restore(state);
+                    }
+                    image.Save(Path.Combine(output,frame.ToString("D3")+".png"),ImageFormat.Png);
+                    if(frame==20)image.Save(Path.Combine(root,"assets","previews","hacker-code-flow.png"),ImageFormat.Png);
+                }
+            }
+        }
+    }
+    static void OceanFrames(string root,string output)
+    {
+        Directory.CreateDirectory(output);
+        using(var sprites=new KeyboardPetSprites(root))
+        using(var image=new Bitmap(704,420,PixelFormat.Format32bppArgb))
+        using(var g=Graphics.FromImage(image))
+        using(var font=new Font("Microsoft YaHei UI",12,FontStyle.Bold))
+        using(var shortHair=new BoundPetScene(sprites,new PetInputBindings(),new InputFeedbackState()))
+        using(var longHair=new BoundPetScene(sprites,new PetInputBindings(),new InputFeedbackState()))
+        {
+            var scenes=new[]{shortHair,longHair};
+            for(int i=0;i<2;i++)
+            {
+                var scene=scenes[i];scene.SetViewWidth(BoundPetScene.CompactWidth);scene.Portrait.SetHairStyle(i);
+                scene.SetMusicStyle(PetMusicStyles.OceanWaves);scene.Portrait.SetListeningStyle(PetListeningStyles.Bandana);
+                scene.MusicPlaying=true;scene.MusicLevel=.2f;
+                for(int frame=0;frame<90;frame++)scene.Advance(frame/30.0,1/30.0,false);
+            }
+            for(int frame=0;frame<100;frame++)
+            {
+                double now=3+frame*.05;
+                g.Clear(Color.FromArgb(243,248,250));
+                using(var dark=new SolidBrush(Color.FromArgb(32,41,56)))g.FillRectangle(dark,352,0,352,420);
+                for(int i=0;i<2;i++)
+                {
+                    var scene=scenes[i];scene.MusicLevel=(float)(.15+.1*Math.Sin(now*1.7));scene.Advance(now,.05,false);
+                    g.DrawString(i==0 ? "海浪 · 浅色背景" : "海浪 · 深色背景",font,i==0 ? Brushes.DarkSlateGray : Brushes.WhiteSmoke,i*352+15,12);
+                    var saved=g.Save();g.TranslateTransform(i*352,-18);scene.Draw(g,now,false,false);g.Restore(saved);
+                }
+                image.Save(Path.Combine(output,frame.ToString("D3")+".png"),ImageFormat.Png);
+                if(frame==20)image.Save(Path.Combine(root,"assets","previews","ocean-waves-soft.png"),ImageFormat.Png);
+            }
+        }
+    }
     static void ArmoredMusicFrames(string root,string output)
     {
         Directory.CreateDirectory(output);
@@ -94,10 +166,13 @@ internal static class BoundPreview
     static void HelmetStills(KeyboardPetSprites sprites,string prefix)
     {
         using(var sheet=new Bitmap(1120,1520,PixelFormat.Format32bppArgb))
+        using(var settled=new Bitmap(720,350,PixelFormat.Format32bppArgb))
+        using(var settledGraphics=Graphics.FromImage(settled))
         using(var g=Graphics.FromImage(sheet))
         using(var font=new Font("Microsoft YaHei UI",12,FontStyle.Bold))
         {
             g.Clear(Color.FromArgb(250,247,249));
+            settledGraphics.Clear(Color.FromArgb(250,247,249));
             for(int style=0;style<2;style++)
             {
                 var state=new InputFeedbackState();
@@ -110,15 +185,22 @@ internal static class BoundPreview
                         double now=frame/30.0;
                         if(frame%6==0){int key=frame%12==0 ? 65 : 74;state.Key(key,true,now);state.Key(key,false,now+.005);}
                         scene.Advance(now,1/30.0,false);
+                        if(frame==315)
+                        {
+                            settledGraphics.DrawString(style==0 ? "短发 · 银白骑士盔" : "长发 · 银白骑士盔",font,Brushes.DarkSlateGray,style*360+14,10);
+                            var snapshot=settledGraphics.Save();settledGraphics.TranslateTransform(style*360+6,-80);
+                            scene.Draw(settledGraphics,now,false,false);settledGraphics.Restore(snapshot);
+                        }
                         if(frame!=120&&frame!=165&&frame!=195&&frame!=225&&frame!=255&&frame!=315&&frame!=435&&frame!=550)continue;
                         int x=column%4*280,y=(style*2+column/4)*380;
-                        g.DrawString((style==0 ? "短发 · " : "长发 · ")+new[] {"正常打字","顶甲开始铺展","顶甲贴合头顶","侧甲贴合两侧","侧甲就位 · 面部露出","开放头盔锁定","侧甲沿外侧退回","顶甲收回"}[column],font,Brushes.DarkSlateGray,x+12,y+12);
+                        g.DrawString((style==0 ? "短发 · " : "长发 · ")+new[] {"正常打字","顶甲开始铺展","顶甲贴合头顶","侧甲贴合两侧","下颌护边贴合","露面头盔锁定","护边打开 · 侧甲退回","顶甲收回"}[column],font,Brushes.DarkSlateGray,x+12,y+12);
                         var saved=g.Save();g.TranslateTransform(x+7,y+32);g.ScaleTransform(.75f,.75f);
                         scene.Draw(g,now,false,true);g.Restore(saved);column++;
                     }
                 }
             }
             sheet.Save(prefix+"-typing-helmet.png",ImageFormat.Png);
+            settled.Save(prefix+"-helmet-settled.png",ImageFormat.Png);
         }
     }
     static void HelmetFrames(string root,string output)
@@ -145,7 +227,7 @@ internal static class BoundPreview
                         {int key=frame%8==0 ? 65 : 74;inputs[style].Key(key,true,now);inputs[style].Key(key,false,now+.005);}
                         scenes[style].Advance(now,.05,false);
                         var pose=scenes[style].Portrait;
-                        string phase=pose.HelmetBlend<=0 ? "打字" : pose.HelmetRemoving ? "沿头部外侧退回" : pose.HelmetVisor<.99f ? "沿头部外侧展开" : "开放头盔锁定";
+                        string phase=pose.HelmetBlend<=0 ? "打字" : pose.HelmetRemoving ? "沿头部外侧退回" : pose.HelmetVisor<.99f ? "沿头部外侧展开" : "完整头盔锁定";
                         g.DrawString((style==0 ? "短发" : "长发")+" · "+phase,font,Brushes.DarkSlateGray,style*264+12,4);
                         var saved=g.Save();g.TranslateTransform(style*264,25);g.ScaleTransform(.75f,.75f);
                         scenes[style].Draw(g,now,false,true);g.Restore(saved);
@@ -168,21 +250,21 @@ internal static class BoundPreview
                 var state=new InputFeedbackState();
                 using(var scene=new BoundPetScene(sprites,new PetInputBindings(),state))
                 {
-                    scene.SetViewWidth(BoundPetScene.CompactWidth);
+                    scene.SetViewWidth(BoundPetScene.CompactWidth);scene.SetMouseStyle(PetMouseStyles.KnightSword);
                     for(int frame=0;frame<90;frame++)scene.Advance(frame/30.0,1/30.0,false);
                     if(mode==1||mode==2){state.Button(mode,true,3);state.Button(mode,false,3.005);}
                     if(mode==3||mode==4)state.Wheel(mode==3 ? 120 : -120,false,3);
                     scene.Advance(3.08,.08,false);
-                    g.DrawString(new[] {"待机","左键 · 快速点击","右键 · 快速点击","滚轮 · 向上","滚轮 · 向下"}[mode],font,Brushes.DarkSlateGray,mode*250+12,12);
+                    g.DrawString(new[] {"待机","左键 · 向左挥剑","右键 · 向右挥剑","滚轮 · 向剑尖流光","滚轮 · 向剑柄流光"}[mode],font,Brushes.DarkSlateGray,mode*250+12,12);
                     var saved=g.Save();g.TranslateTransform(mode*250+5,46);g.ScaleTransform(.68f,.68f);g.TranslateTransform(0,-100);
                     scene.Draw(g,3.08,false,true);g.Restore(saved);
                     saved=g.Save();g.SetClip(new Rectangle(mode*250+8,305,234,235));
                     using(var bg=new SolidBrush(Color.FromArgb(49,43,57)))g.FillRectangle(bg,mode*250+8,305,234,235);
-                    g.TranslateTransform(mode*250+8,305);g.ScaleTransform(1.95f,1.95f);g.TranslateTransform(-14,-281);
+                    g.TranslateTransform(mode*250+8,305);g.ScaleTransform(1.8f,1.8f);g.TranslateTransform(-10,-300);
                     scene.Draw(g,3.08,false,true);g.Restore(saved);
                 }
             }
-            sheet.Save(Path.Combine(root,"assets/previews/current-mouse-feedback.png"),ImageFormat.Png);
+            sheet.Save(Path.Combine(root,"assets/previews/current-sword-feedback.png"),ImageFormat.Png);
         }
         Console.WriteLine("Rendered mouse click and scroll animation stills.");
     }
@@ -198,7 +280,7 @@ internal static class BoundPreview
             var state=new InputFeedbackState();
             using(var scene=new BoundPetScene(sprites,new PetInputBindings(),state))
             {
-                scene.SetViewWidth(BoundPetScene.CompactWidth);
+                scene.SetViewWidth(BoundPetScene.CompactWidth);scene.SetMouseStyle(PetMouseStyles.KnightSword);
                 for(int frame=0;frame<110;frame++)
                 {
                     double now=frame*.05;
@@ -215,7 +297,7 @@ internal static class BoundPreview
                     g.Clear(Color.FromArgb(49,43,57));
                     g.InterpolationMode=System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                     g.DrawImage(sceneImage,new Rectangle(0,-55,352,460),0,0,352,460,GraphicsUnit.Pixel);
-                    g.DrawImage(sceneImage,new Rectangle(370,105,310,288),new Rectangle(12,278,135,125),GraphicsUnit.Pixel);
+                    g.DrawImage(sceneImage,new Rectangle(370,105,310,288),new Rectangle(10,300,135,130),GraphicsUnit.Pixel);
                     frameImage.Save(Path.Combine(output,frame.ToString("D4")+".png"),ImageFormat.Png);
                 }
             }
@@ -441,12 +523,12 @@ internal static class BoundPreview
                     if(mode==2)state.Wheel(120,false,6.8);
                     scene.Advance(6.85,.07,false);
                     var saved=mice.Save();mice.SetClip(new Rectangle(mode*300+14,40,272,280));
-                    mice.TranslateTransform(mode*300+14,40);mice.ScaleTransform(4,4);mice.TranslateTransform(-40,-340+PetDeskProjection.Lift);
-                    scene.DrawMouse(mice,6.85);mice.Restore(saved);
-                    mice.DrawString(new[] {"白银骑士 · 红围巾与剑徽","点击 · 红宝石反馈","滚轮 · 红宝石滚轮"}[mode],font,Brushes.DarkSlateGray,mode*300+10,8);
+                    mice.TranslateTransform(mode*300+14,40);mice.ScaleTransform(3,3);mice.TranslateTransform(-24,-327);
+                    scene.DrawSword(mice,6.85);mice.Restore(saved);
+                    mice.DrawString(new[] {"骑士剑 · 银刃与红宝石","点击 · 剑刃亮起","滚轮 · 剑身流光"}[mode],font,Brushes.DarkSlateGray,mode*300+10,8);
                 }
             }
-            hairSheet.Save(prefix+"-hair.png",ImageFormat.Png);mouseSheet.Save(prefix+"-mouse.png",ImageFormat.Png);
+            hairSheet.Save(prefix+"-hair.png",ImageFormat.Png);mouseSheet.Save(prefix+"-sword.png",ImageFormat.Png);
         }
     }
     static void WorkStills(KeyboardPetSprites sprites,string prefix)
@@ -565,6 +647,8 @@ internal static class BoundPreview
         try
         {
             string root = args[0], output = args[1];
+            if(args.Length>2&&args[2]=="--hacker-code"){HackerCodeFrames(root,output);return 0;}
+            if(args.Length>2&&args[2]=="--ocean-waves"){OceanFrames(root,output);return 0;}
             if(args.Length>2&&args[2]=="--armored-music"){ArmoredMusicFrames(root,output);return 0;}
             if(args.Length>2&&args[2]=="--music"){MusicFrames(root,output);return 0;}
             if(args.Length>2&&args[2]=="--helmet")

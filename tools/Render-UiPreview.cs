@@ -107,7 +107,7 @@ internal static class UiPreview
         using(var ink=new SolidBrush(KnightUi.Ink))using(var muted=new SolidBrush(KnightUi.Steel))using(var red=new SolidBrush(KnightUi.Red))
         {
             g.Clear(KnightUi.Paper);g.InterpolationMode=System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-            g.FillRectangle(red,28,17,54,3);g.DrawString("白发小骑士 / 窗口设计",title,ink,28,29);
+            g.FillRectangle(red,28,17,54,3);g.DrawString("桌宠助手 / 窗口设计",title,ink,28,29);
             g.DrawString("黑白主色 · 朱红点缀 · 统一线性图标与细边框",note,muted,29,69);
             string[] files={"current-calendar.png","current-chat-settings.png","current-settings.png","current-chat.png","current-menu.png","current-dialog.png"};
             string[] labels={"日历工作区","AI 接口设置","按键与鼠标设置","点击人物展开输入","桌宠菜单","提示对话框"};
@@ -202,7 +202,7 @@ internal static class UiPreview
                 g.Clear(Color.FromArgb(234,234,233));
                 int settingsX=430,settingsY=92,settingsHeight=600,settingsWidth=(int)(settings.Width*600.0/settings.Height);
                 using(var ink=new SolidBrush(KnightUi.Ink))
-                {g.DrawString("白发小骑士  /  UI 样式",font,ink,24,18);g.DrawString("紧凑菜单",font,ink,24,58);g.DrawString("按键绑定与鼠标反馈",font,ink,settingsX,58);g.DrawString("按键提示 · 固定框 / 冒泡",font,ink,24,710);g.DrawString("提示对话框",font,ink,settingsX,710);}
+                {g.DrawString("桌宠助手  /  UI 样式",font,ink,24,18);g.DrawString("紧凑菜单",font,ink,24,58);g.DrawString("按键绑定与鼠标反馈",font,ink,settingsX,58);g.DrawString("按键提示 · 固定框 / 冒泡",font,ink,24,710);g.DrawString("提示对话框",font,ink,settingsX,710);}
                 g.DrawImageUnscaled(main,24,92);
                 g.DrawImage(settings,new Rectangle(settingsX,settingsY,settingsWidth,settingsHeight));g.DrawImageUnscaled(keys,10,752);g.DrawImage(alert,new Rectangle(settingsX,752,480,(int)(alert.Height*480.0/alert.Width)));
                 sheet.Save(Path.Combine(output,"current-ui.png"),ImageFormat.Png);

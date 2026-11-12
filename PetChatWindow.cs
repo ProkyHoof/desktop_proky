@@ -43,7 +43,7 @@ internal sealed class PetChatSettingsWindow : KnightWindow
     internal PetChatSettingsWindow(PetChatSettings settings, string path)
     {
         original = settings.Copy(); this.path = path;
-        PetChatUi.Style(this, "AI 接口设置 · 白发小骑士", new Size(760, 660));
+        PetChatUi.Style(this, "AI 接口设置 · "+KnightUi.AppName, new Size(760, 660));
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24,12,24,16), ColumnCount = 1, RowCount = 4 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));

@@ -104,9 +104,9 @@ internal static class WindowEdgeTests
             var workingArea=Screen.FromPoint(Cursor.Position).WorkingArea;
             corner.PerformClick();
             Check(pet.Right==workingArea.Right,"Corner action reaches the screen edge without a fixed right inset");
-            foreach(int style in new[] {0,1})
+            foreach(int style in new[] {0,1,2})
             {
-                typeof(KeyboardPetWindow).GetMethod("ApplyWardrobe",Private).Invoke(pet,new object[] {style});
+                typeof(KeyboardPetWindow).GetMethod("ApplyWardrobe",Private).Invoke(pet,new object[] {style,3,1,1,1,1,0,0});
                 for(int size=0;size<3;size++)
                 {
                     ((ToolStripMenuItem)sizes.DropDownItems[size]).PerformClick();
@@ -125,9 +125,9 @@ internal static class WindowEdgeTests
                         int lastVisible=-1;
                         for(int x=pet.Width-1;x>=0&&lastVisible<0;x--)
                         for(int y=0;y<pet.Height;y++)if(image.GetPixel(x,y).A>=32){lastVisible=x;break;}
-                        // Both hairstyles share the long-hair canvas so switching
+                        // All three hairstyles share the registered canvas so switching
                         // styles does not move or resize the desktop window.
-                        float margin=(style==PetHairStyles.Short ? 64 : 16)*scale;
+                        float margin=(style==PetHairStyles.Short ? 64 : style==PetHairStyles.TwinPonytails ? 20 : 16)*scale;
                         Check(lastVisible>=pet.Width-margin&&lastVisible<=pet.Width-3*scale,
                             "Actual artwork reaches the window edge with a small transparent margin, size="+width+", style="+style+", lastVisible="+lastVisible+", nativeWidth="+pet.Width+", margin="+margin+", helmet="+pet.scene.Portrait.HelmetBlend);
                         for(int y=0;y<pet.Height;y++)Check(image.GetPixel(pet.Width-1,y).A==0,"Permanent artwork is not clipped at the right edge");
@@ -149,6 +149,6 @@ internal static class WindowEdgeTests
                 }
             }
         }
-        Console.WriteLine("PASS: compact native window, visible right margin, docking/drag/resize, both hairstyles, three sizes and input frame visibility/hit tests.");
+        Console.WriteLine("PASS: compact native window, visible right margin, docking/drag/resize, all three hairstyles, three sizes and input frame visibility/hit tests.");
     }
 }

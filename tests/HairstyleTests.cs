@@ -10,8 +10,73 @@ internal static class HairstyleTests
 {
     const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     static void Check(bool value,string message){if(!value)throw new Exception("Hairstyle: "+message);}
+    static void TwinPonytails(string root)
+    {
+        using(var sprites=new KeyboardPetSprites(root))
+        using(var sheet=new Bitmap(1080,800,PixelFormat.Format32bppArgb))
+        using(var canvas=Graphics.FromImage(sheet))
+        using(var font=new Font("Microsoft YaHei UI",12,FontStyle.Bold))
+        {
+            canvas.Clear(Color.FromArgb(245,242,235));
+            for(int look=0;look<6;look++)
+            {
+                var input=new InputFeedbackState();
+                using(var scene=new BoundPetScene(sprites,new PetInputBindings(),input))
+                {
+                    scene.SetViewWidth(BoundPetScene.CompactWidth);
+                    scene.Portrait.SetHairStyle(PetHairStyles.TwinPonytails);
+                    scene.Portrait.SetHeadwearStyle(look==2||look==5 ? 1 : 0);
+                    scene.Portrait.SetListeningStyle(look==4 ? 1 : 0);
+                    scene.MusicPlaying=look>=3;scene.MusicLevel=.3f;
+                    for(int frame=0;frame<=360;frame++)
+                    {
+                        double now=frame/30.0;
+                        if((look==1||look==2||look==5)&&frame%3==0)
+                        {input.Key(65,true,now);input.Key(65,false,now+.001);}
+                        scene.Advance(now,1/30.0,false);
+                    }
+                    Check(scene.Portrait.HairStyle==PetHairStyles.TwinPonytails,"Twin ponytail selection survives animation");
+                    if(look==0)
+                    {
+                        var portrait=scene.Portrait;
+                        using(var twin=(Bitmap)portrait.Image.Clone())
+                        {
+                            portrait.SetHairStyle(PetHairStyles.Short);
+                            using(var shortHair=(Bitmap)portrait.Image.Clone())
+                            {
+                                portrait.SetHairStyle(PetHairStyles.TwinPonytails);
+                                int[] added={0,0};
+                                for(int y=90;y<210;y++)for(int x=5;x<295;x++)
+                                {
+                                    int px=x+LivingPetPortrait.Padding,py=y+LivingPetPortrait.Padding;
+                                    if(twin.GetPixel(px,py).A<240||shortHair.GetPixel(px,py).A>8)continue;
+                                    Check(portrait.Hit(new PointF(x,y)),"Both loose tails join the immediate hit mask");
+                                    added[x<150 ? 0 : 1]++;
+                                }
+                                Check(added[0]>1000&&added[1]>1000,"Twin ponytails add full loose silhouettes on both sides");
+                            }
+                        }
+                    }
+                    foreach(int width in new[]{252,336,420})
+                    using(var image=new Bitmap((int)Math.Ceiling(scene.ViewWidth*width/336f),575,PixelFormat.Format32bppArgb))
+                    using(var g=Graphics.FromImage(image))
+                    {
+                        g.ScaleTransform(width/336f,width/336f);scene.Draw(g,12,false,true);
+                        for(int y=0;y<image.Height;y++)
+                            Check(image.GetPixel(0,y).A==0&&image.GetPixel(image.Width-1,y).A==0,"Ponytails retain transparent edges at every size and accessory combination");
+                    }
+                    int col=look%3,row=look/3;
+                    canvas.DrawString(new[]{"双马尾 · 待机","双马尾 · 骑士头盔","双马尾 · 海盗帽","双马尾 · 耳机","双马尾 · 头巾","双马尾 · 海盗帽与耳机"}[look],font,Brushes.DarkSlateGray,col*360+14,row*400+12);
+                    var saved=canvas.Save();canvas.TranslateTransform(col*360,row*400-40);scene.Draw(canvas,12,false,true);canvas.Restore(saved);
+                }
+            }
+            string folder=Path.Combine(root,"assets","previews");Directory.CreateDirectory(folder);
+            sheet.Save(Path.Combine(folder,"twin-ponytails.png"),ImageFormat.Png);
+        }
+    }
     internal static void Run(string root)
     {
+        TwinPonytails(root);
         using(var sprites=new KeyboardPetSprites(root))
         using(var portrait=new LivingPetPortrait(sprites))
         {
@@ -146,6 +211,18 @@ internal static class HairstyleTests
                 var musicToggle=((ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",Private).GetValue(reload)).Items.Commands().Single(item=>item.Text=="随音乐律动");
                 Check(!musicToggle.Checked,"Restart preserves disabled music preference");
             }
+            using(var pet=new KeyboardPetWindow(isolated))
+            using(var wardrobe=new PetWardrobeWindow(isolated,PetHairStyles.Reference,h=>typeof(KeyboardPetWindow).GetMethod("ApplyWardrobe",Private).Invoke(pet,new object[]{h,0,0,0,0,0,0,0})))
+            {
+                wardrobe.SelectHairStyle(PetHairStyles.TwinPonytails);wardrobe.ApplySelection();
+                foreach(int width in new[]{252,336,420})
+                {
+                    typeof(KeyboardPetWindow).GetMethod("SetSpriteSize",Private).Invoke(pet,new object[]{width});
+                    Check(pet.scene.Portrait.HairStyle==PetHairStyles.TwinPonytails,"Resizing preserves twin ponytails");
+                }
+            }
+            using(var reload=new KeyboardPetWindow(isolated,true))
+                Check(reload.scene.Portrait.HairStyle==PetHairStyles.TwinPonytails,"Wardrobe saves and restarts with twin ponytails");
             File.WriteAllText(config,"{\"hairStyle\":999}");
             using(var invalid=new KeyboardPetWindow(isolated,true))
                 Check(invalid.scene.Portrait.HairStyle==PetHairStyles.Short&&!invalid.inputState.BubbleMode,"Unknown style falls back safely, absent display mode uses fixed frame");

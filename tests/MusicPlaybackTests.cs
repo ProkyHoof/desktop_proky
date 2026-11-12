@@ -26,7 +26,7 @@ internal static class MusicPlaybackTests
         using(var sprites=new KeyboardPetSprites(root))
         using(var scene=new BoundPetScene(sprites,new PetInputBindings(),new InputFeedbackState()))
         {
-            for(int style=0;style<2;style++)
+            for(int style=0;style<3;style++)
             {
                 scene.Portrait.SetHairStyle(style);scene.MusicPlaying=true;scene.MusicLevel=.2f;
                 float previous=scene.Portrait.Tilt;
@@ -36,7 +36,7 @@ internal static class MusicPlaybackTests
                     Check(Math.Abs(scene.Portrait.Tilt-previous)<.03f,"Music sway has no pose jumps");
                     previous=scene.Portrait.Tilt;
                 }
-                Check(scene.Portrait.MusicBlend>.99&&scene.Portrait.MouthIndex==6,"Both hairstyles use the relaxed listening smile");
+                Check(scene.Portrait.MusicBlend>.99&&scene.Portrait.MouthIndex==6,"All hairstyles use the relaxed listening smile");
                 var local=new PointF(65,123); // Outer ear cushion extends the silhouette.
                 using(var pose=scene.Portrait.HeadMatrix())
                 {
@@ -63,6 +63,9 @@ internal static class MusicPlaybackTests
                 Check(scene.Portrait.MusicBlend<.001,"Stopping music removes earphones smoothly");
             }
             ArmoredListening(sprites);
+            PirateListening(sprites);
+            BandanaListening(sprites);
+            CyberListening(sprites);
             // Starting music on an existing helmet switches directly to its
             // integrated audio modules without cancelling the armor action.
             foreach(int fps in new[] {15,60})
@@ -94,12 +97,88 @@ internal static class MusicPlaybackTests
             Check(monitor.LastError==0,"Windows output meter initialization: 0x"+monitor.LastError.ToString("X8"));
             Console.WriteLine("PASS: Windows output-meter smoke check (available="+monitor.Available+", peak="+monitor.Peak+").");
         }
-        Console.WriteLine("PASS: sustained output gate, music poses, fast typing armor/audio modules, uninterrupted listening, rest/stop transitions, both hairstyles and three sizes.");
+        Console.WriteLine("PASS: sustained output gate, music poses, fast typing armor/audio modules, uninterrupted listening, rest/stop transitions, all three hairstyles and three sizes.");
+    }
+    static void CyberListening(KeyboardPetSprites sprites)
+    {
+        foreach(int fps in new[]{15,60})for(int hair=0;hair<3;hair++)
+        for(int hat=0;hat<3;hat++)for(int audio=0;audio<3;audio++)
+        {
+            if(hat!=PetHeadwearStyles.CyberVisor&&audio!=PetListeningStyles.NeuralAudio)continue;
+            using(var pet=new LivingPetPortrait(sprites))
+            {
+                pet.SetHairStyle(hair);pet.SetHeadwearStyle(hat);pet.SetListeningStyle(audio);pet.SetTone(3);
+                float previous=0;bool deployed=false;
+                for(int frame=0;frame<=fps*19;frame++)
+                {
+                    double now=frame/(double)fps;
+                    pet.Update(now,1.0/fps,false,now<12,false,now<12 ? WorkMood.Turbo : WorkMood.Idle,600,true,.32f);
+                    Check(Math.Abs(pet.HelmetBlend-previous)<.14f,"Cyber visor deploys and retracts continuously at 15/60 fps");previous=pet.HelmetBlend;
+                    Check(pet.MusicArmorBlend==0,"Cyber gear does not introduce knight audio modules");
+                    if(now>10.5&&now<12){deployed=true;Check(pet.HelmetBlend>.99f&&pet.MusicBlend>.99f,"Cyber and original accessories coexist during sustained typing");}
+                    if(frame==fps*11)using(var snapshot=(Bitmap)pet.Image.Clone())
+                    {
+                        for(int y=0;y<snapshot.Height;y++)Check(snapshot.GetPixel(0,y).A==0&&snapshot.GetPixel(snapshot.Width-1,y).A==0,"Mixed cyber accessories fit the portrait canvas");
+                    }
+                }
+                Check(deployed&&pet.HelmetBlend==0&&pet.MusicBlend>.99f,"Cyber visor retracts while listening continues");
+                for(int frame=0;frame<fps*3;frame++)pet.Update(19.1+frame/(double)fps,1.0/fps,false,false,false,WorkMood.Idle,0,false,0);
+                Check(pet.MusicBlend<.001f,"Stopping music removes neural audio without stale modules");
+                pet.Update(23,.1,true,false,false);Check(pet.HelmetBlend==0&&pet.MusicBlend==0,"Rest clears mixed cyber accessories");
+            }
+        }
+    }
+    static void BandanaListening(KeyboardPetSprites sprites)
+    {
+        foreach(int fps in new[]{15,60})
+        for(int hair=0;hair<3;hair++)
+        for(int hat=0;hat<2;hat++)
+        using(var pet=new LivingPetPortrait(sprites))
+        {
+            pet.SetHairStyle(hair);pet.SetHeadwearStyle(hat);pet.SetListeningStyle(PetListeningStyles.Bandana);
+            for(int frame=0;frame<=fps*19;frame++)
+            {
+                double now=frame/(double)fps;
+                pet.Update(now,1.0/fps,false,now<12,false,now<12 ? WorkMood.Turbo : WorkMood.Idle,600,true,.3f);
+                Check(pet.HeadphoneBandBlend==0&&pet.MusicArmorBlend==0,"Bandana never spawns headphone parts or metal audio modules");
+                if(now>10.5&&now<12)Check(pet.HelmetBlend>.99f&&pet.MusicBlend>.99f,"Both hats coexist with bandana listening while typing");
+            }
+            Check(pet.HelmetBlend==0&&pet.MusicBlend>.99f,"Bandana listening continues after the typing hat retracts");
+            pet.Update(19.1,.1,true,false,false);
+            Check(pet.MusicBlend==0,"Rest immediately clears the listening bandana");
+        }
+    }
+    static void PirateListening(KeyboardPetSprites sprites)
+    {
+        foreach(int fps in new[]{15,60})
+        for(int style=0;style<3;style++)
+        foreach(bool musicFirst in new[]{false,true})
+        using(var pet=new LivingPetPortrait(sprites))
+        {
+            pet.SetHairStyle(style);pet.SetHeadwearStyle(PetHeadwearStyles.PirateHat);
+            bool deployed=false;float previousBand=0;
+            for(int frame=0;frame<=fps*19;frame++)
+            {
+                double now=frame/(double)fps;
+                pet.Update(now,1.0/fps,false,now<12,false,now<12 ? WorkMood.Turbo : WorkMood.Idle,600,musicFirst||now>=10,.3f);
+                Check(Math.Abs(pet.HeadphoneBandBlend-previousBand)<.35f,"Pirate headband handoff stays continuous at 15/60 fps");
+                previousBand=pet.HeadphoneBandBlend;
+                if(pet.HelmetBlend>=.32f)Check(pet.HeadphoneBandBlend==0,"Pirate hat always conceals the ordinary headband");
+                if(now>10.5&&now<12)
+                {
+                    deployed=true;
+                    Check(pet.HelmetBlend>.99f&&pet.MusicBlend>.9f&&pet.MusicArmorBlend==0,"Music started before or after the pirate hat retains listening without metal modules");
+                }
+            }
+            Check(deployed&&pet.HelmetBlend==0&&pet.HeadphoneBandBlend>.99f,"Removing the pirate hat smoothly restores the listening headband");
+            pet.Update(19.1,.1,true,false,false,WorkMood.Idle,0,true,.3f);
+            Check(pet.MusicBlend==0&&pet.HeadphoneBandBlend==0,"Rest clears pirate listening accessories");
+        }
     }
     static void ArmoredListening(KeyboardPetSprites sprites)
     {
         foreach(int fps in new[] {15,60})
-        for(int style=0;style<2;style++)
+        for(int style=0;style<3;style++)
         {
             var input=new InputFeedbackState();
             using(var scene=new BoundPetScene(sprites,new PetInputBindings(),input))

@@ -1,4 +1,4 @@
-param([switch]$Silent, [switch]$NoRegistration, [switch]$KeepUserData, [switch]$RemoveUserData)
+﻿param([switch]$Silent, [switch]$NoRegistration, [switch]$KeepUserData, [switch]$RemoveUserData)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 try {
@@ -9,7 +9,7 @@ try {
     if ($KeepUserData -and $RemoveUserData) { throw '不能同时选择保留和删除个人数据。' }
     $keep = -not $RemoveUserData
     if (-not $Silent) {
-        $answer = [Windows.Forms.MessageBox]::Show(('是否保留个人配置和日历记录？' + [Environment]::NewLine + '是：卸载程序，保留 user-data。' + [Environment]::NewLine + '否：卸载程序并删除 user-data。' + [Environment]::NewLine + '取消：退出卸载。'),'卸载白发小骑士','YesNoCancel','Question','Button1')
+        $answer = [Windows.Forms.MessageBox]::Show(('是否保留个人配置和日历记录？' + [Environment]::NewLine + '是：卸载程序，保留 user-data。' + [Environment]::NewLine + '否：卸载程序并删除 user-data。' + [Environment]::NewLine + '取消：退出卸载。'),'卸载桌宠助手','YesNoCancel','Question','Button1')
         if ($answer -eq 'Cancel') { exit 0 }
         $keep = $answer -eq 'Yes'
     }
@@ -33,7 +33,9 @@ try {
         $startupKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
         $startup = (Get-ItemProperty -LiteralPath $startupKey -Name DesktopPet_ProkyHoof -ErrorAction SilentlyContinue).DesktopPet_ProkyHoof
         if ($startup -eq ('"' + $app + '"')) { Remove-ItemProperty -LiteralPath $startupKey -Name DesktopPet_ProkyHoof }
-        Remove-PetShortcuts $installRoot @((Join-Path ([Environment]::GetFolderPath('Programs')) '白发小骑士.lnk'),(Join-Path ([Environment]::GetFolderPath('Desktop')) '白发小骑士.lnk'))
+        foreach ($name in @('桌宠助手.lnk','白发小骑士.lnk')) {
+            Remove-PetShortcuts $installRoot @((Join-Path ([Environment]::GetFolderPath('Programs')) $name),(Join-Path ([Environment]::GetFolderPath('Desktop')) $name))
+        }
         $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DesktopPet'
         $registered = Get-ItemProperty -LiteralPath $registration -ErrorAction SilentlyContinue
         if ($registered.InstallLocation -eq $installRoot) { Remove-Item -LiteralPath $registration }
@@ -41,7 +43,7 @@ try {
     if (@(Get-ChildItem -LiteralPath $installRoot -Force).Count -eq 0) { Remove-Item -LiteralPath $installRoot -Force }
     if (-not $Silent) {
         $message = if ($keep) { '已卸载，个人数据保留在：' + $dataRoot } else { '已卸载并删除个人数据。' }
-        [void][Windows.Forms.MessageBox]::Show($message,'白发小骑士')
+        [void][Windows.Forms.MessageBox]::Show($message,'桌宠助手')
     }
 }
 catch {

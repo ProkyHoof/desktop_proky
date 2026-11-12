@@ -7,6 +7,7 @@ using System.Windows.Forms;
 // The same ceramic armor, graphite seams and ruby visor as the pet's helmet.
 internal static class KnightUi
 {
+    internal const string AppName="桌宠助手";
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
     static Icon windowIcon;
     internal static Icon WindowIcon
@@ -107,7 +108,7 @@ internal class KnightDialog : Form
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr handle,int message,IntPtr wParam,IntPtr lParam);
     readonly Font uiFont=new Font("Microsoft YaHei UI",14,FontStyle.Regular,GraphicsUnit.Pixel);
-    internal string Caption="白发小骑士",Subtitle="桌宠设置";
+    internal string Caption=KnightUi.AppName,Subtitle="桌宠设置";
     internal KnightDialog()
     {
         Font=uiFont;BackColor=KnightUi.Paper;ForeColor=KnightUi.Ink;Icon=KnightUi.WindowIcon;

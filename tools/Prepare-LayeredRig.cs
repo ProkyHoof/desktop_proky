@@ -441,9 +441,44 @@ internal static class PrepareLayeredRig
             Save("hair-clip",clip,"head",172,55,60);
         }
     }
+    static void PrepareOriginalJawSource(string root)
+    {
+        string design=Path.Combine(root,"assets","keyboard-knight","helmet-design");
+        string maskPath=Path.Combine(design,"silver-knight-original-jaw-mask.png");
+        if(!File.Exists(maskPath))return;
+        using(var source=new Bitmap(Path.Combine(design,"silver-knight-source.png")))
+        using(var mask=new Bitmap(maskPath))
+        using(var result=source.Clone(new Rectangle(0,0,source.Width,source.Height),PixelFormat.Format32bppArgb))
+        {
+            if(Math.Abs(source.Width-mask.Width)>2||Math.Abs(source.Height-mask.Height)>2)
+                throw new InvalidDataException("Open-face mask must match the original helmet canvas within two pixels.");
+            // The generated edit supplies only the erasure mask. Every retained
+            // color, facet and outline comes directly from the original art.
+            // Preserve the original outer boundary, including the jawline.
+            for(int y=source.Height/2;y<source.Height-6;y++)for(int x=6;x<source.Width-6;x++)
+            {
+                if(mask.GetPixel(x*mask.Width/source.Width,y*mask.Height/source.Height).A>=16||source.GetPixel(x,y).A==0)continue;
+                // Protect both original gray lower-jaw flanges in full, even
+                // where the generated aperture grazes their inner border.
+                float jawX=Math.Min(x,source.Width-x);
+                if(jawX>=430&&jawX<=600&&y>=Math.Ceiling(845+(jawX-430)*.365))continue;
+                bool boundary=source.GetPixel(x-6,y).A<8||source.GetPixel(x+6,y).A<8||
+                    source.GetPixel(x,y-6).A<8||source.GetPixel(x,y+6).A<8;
+                if(!boundary)result.SetPixel(x,y,Color.Transparent);
+            }
+            result.Save(Path.Combine(design,"silver-knight-original-jaw-source.png"),ImageFormat.Png);
+        }
+    }
     static void PrepareHelmet(string root)
     {
-        using(var source=new Bitmap(Path.Combine(root,"assets","keyboard-knight","helmet-ink-black-white-source.png")))
+        PrepareOriginalJawSource(root);
+        string sourceFile=Path.Combine(root,"assets","keyboard-knight","helmet-design","silver-knight-original-jaw-source.png");
+        if(!File.Exists(sourceFile))sourceFile=Path.Combine(root,"assets","keyboard-knight","helmet-design","silver-knight-open-face-source.png");
+        if(!File.Exists(sourceFile))sourceFile=Path.Combine(root,"assets","keyboard-knight","helmet-design","silver-knight-source-v2.png");
+        if(!File.Exists(sourceFile))sourceFile=Path.Combine(root,"assets","keyboard-knight","helmet-design","silver-knight-source.png");
+        bool silverKnight=File.Exists(sourceFile);
+        if(!silverKnight)sourceFile=Path.Combine(root,"assets","keyboard-knight","helmet-ink-black-white-source.png");
+        using(var source=new Bitmap(sourceFile))
         {
             int l=source.Width,t=source.Height,r=-1,b=-1;
             for(int y=0;y<source.Height;y++)for(int x=0;x<source.Width;x++)
@@ -457,7 +492,10 @@ internal static class PrepareLayeredRig
                 using(var g=Painter(layer))g.DrawImage(cut,new RectangleF(44,1,216,172));
                 layer.Save(Path.Combine(output,"helmet-assembled-reference.png"),ImageFormat.Png);
                 var pixels=Read(layer);
-                HelmetCut("helmet",pixels,new float[] {-.1f,-.1f,1.1f,-.1f,1.1f,.23f,.82f,.29f,.778f,.45f,.793f,.46f,.5f,.582f,.207f,.46f,.222f,.45f,.18f,.29f,-.1f,.23f},false);
+                // The plain silver design carries its dark brow rim lower
+                // than the former gem setting; retain this rim on the crown.
+                float side=silverKnight ? .54f : .46f,center=silverKnight ? .65f : .582f;
+                HelmetCut("helmet",pixels,new float[] {-.1f,-.1f,1.1f,-.1f,1.1f,.23f,.82f,.29f,.778f,side-.01f,.793f,side,.5f,center,.207f,side,.222f,side-.01f,.18f,.29f,-.1f,.23f},false);
                 var temple=new float[] {-.1f,.23f,.18f,.29f,.222f,.45f,.159f,.61f,.136f,.69f,.194f,.811f,.382f,.915f,.40f,1.1f,-.1f,1.1f};
                 HelmetCut("helmet-temple-left",pixels,temple,false);HelmetCut("helmet-temple-right",pixels,temple,true);
                 var face=new float[] {.222f,.45f,.207f,.46f,.5f,.582f,.5f,.795f,.39f,.865f,.40f,1.1f,.382f,.915f,.194f,.811f,.136f,.69f,.159f,.61f};
@@ -512,6 +550,9 @@ internal static class PrepareLayeredRig
                 for(int i=0;i<manifest.Count;i++)if(manifest[i].StartsWith("hair-cap\t",StringComparison.Ordinal))
                     manifest[i]=manifest[i].Replace("\thair-cap.png\t","\tshort-hair-cap.png\t");
             }
+            foreach(string side in new[]{"left","right"})
+                if(File.Exists(Path.Combine(output,"hair-ponytail-"+side+".png")))
+                    manifest.Add("hair-ponytail-"+side+"\thair-ponytail-"+side+".png\thead\t"+(side=="left" ? "76" : "224")+"\t72\t0");
             File.WriteAllLines(Path.Combine(output,"layers.tsv"),manifest.ToArray());
             original.Dispose();clean.Dispose();
             Console.WriteLine("Prepared registered 900x687 cutouts, independent eyes/iris/lids and eight mouth states.");return 0;

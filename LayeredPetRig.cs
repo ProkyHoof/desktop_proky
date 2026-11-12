@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -47,7 +47,16 @@ internal sealed class RigSprite : IDisposable
             }
         }
     }
-    internal void Draw(Graphics g) {g.DrawImage(Image,Bounds,new RectangleF(0,0,Image.Width,Image.Height),GraphicsUnit.Pixel);}
+    Bitmap tonedImage;
+    int tone;
+    internal Bitmap RenderImage { get {return tonedImage??Image;} }
+    internal void SetTone(int value)
+    {
+        if(value==tone)return;
+        var replacement=value==0 ? null : PetSkinStyles.ApplyTone(Image,value);
+        if(tonedImage!=null)tonedImage.Dispose();tonedImage=replacement;tone=value;
+    }
+    internal void Draw(Graphics g) {g.DrawImage(RenderImage,Bounds,new RectangleF(0,0,Image.Width,Image.Height),GraphicsUnit.Pixel);}
     internal void Draw(Graphics g,float opacity)
     {
         if(opacity<=0)return;if(opacity>=1){Draw(g);return;}
@@ -55,7 +64,7 @@ internal sealed class RigSprite : IDisposable
         {
             var color=new ColorMatrix();color.Matrix33=opacity;attributes.SetColorMatrix(color);
             var corners=new[] {new PointF(Bounds.Left,Bounds.Top),new PointF(Bounds.Right,Bounds.Top),new PointF(Bounds.Left,Bounds.Bottom)};
-            g.DrawImage(Image,corners,new RectangleF(0,0,Image.Width,Image.Height),GraphicsUnit.Pixel,attributes);
+            g.DrawImage(RenderImage,corners,new RectangleF(0,0,Image.Width,Image.Height),GraphicsUnit.Pixel,attributes);
         }
     }
     internal bool Hit(PointF p)
@@ -64,13 +73,116 @@ internal sealed class RigSprite : IDisposable
         int x=(int)((p.X-Bounds.X)*Image.Width/Bounds.Width),y=(int)((p.Y-Bounds.Y)*Image.Height/Bounds.Height);
         return Image.GetPixel(x,y).A>=48;
     }
-    public void Dispose(){Image.Dispose();}
+    public void Dispose(){if(tonedImage!=null)tonedImage.Dispose();Image.Dispose();}
 }
 
 internal static class PetHairStyles
 {
-    internal const int Short=0,Reference=1;
-    internal static int Normalize(int value){return value==Reference ? Reference : Short;}
+    internal const int Short=0,Reference=1,TwinPonytails=2;
+    internal static int Normalize(int value){return value>=Short&&value<=TwinPonytails ? value : Short;}
+}
+
+internal static class PetKeyboardStyles
+{
+    internal const int Original=0, Parchment=3, Cyberpunk=4;
+    internal static int Normalize(int value){return value==Parchment||value==Cyberpunk ? value : Original;}
+}
+internal static class PetPadStyles
+{
+    internal const int Original=0, NavigationChart=1, Cyberpunk=2;
+    internal static int Normalize(int value){return value>=0&&value<=Cyberpunk ? value : Original;}
+}
+internal static class PetHeadwearStyles
+{
+    internal const int Helmet=0, PirateHat=1, CyberVisor=2;
+    internal static int Normalize(int value){return value>=0&&value<=CyberVisor ? value : Helmet;}
+}
+internal static class PetMouseStyles
+{
+    internal const int Original=0, KnightSword=1, Cyberpunk=3;
+    internal static int Normalize(int value){return value==KnightSword||value==Cyberpunk ? value : Original;}
+}
+
+internal static class PetMusicStyles
+{
+    internal const int LevelBars=0,OceanWaves=1,HackerCode=2;
+    internal static int Normalize(int value){return value>=0&&value<=HackerCode ? value : LevelBars;}
+}
+internal static class PetListeningStyles
+{
+    internal const int Headphones=0,Bandana=1,NeuralAudio=2;
+    internal static int Normalize(int value){return value>=0&&value<=NeuralAudio ? value : Headphones;}
+}
+
+// Reuse the original artwork and shading; channel swaps preserve alpha,
+// neutral highlights and dark outlines for both illustrated props and irises.
+internal static class PetSkinStyles
+{
+    internal const int Classic=0,Pirate=1,Cyber=3;
+    internal static int Normalize(int value){return value==Pirate||value==Cyber ? value : Classic;}
+    internal static Color CyberPrimary(int tone,int alpha=255)
+    {return Color.FromArgb(alpha,tone==Pirate ? Color.FromArgb(235,198,112) : Color.FromArgb(53,237,244));}
+    internal static Color CyberSecondary(int tone,int alpha=255)
+    {return Color.FromArgb(alpha,tone==Pirate ? Color.FromArgb(208,81,89) : Color.FromArgb(248,86,194));}
+    internal static Color ToneColor(int tone,Color color)
+    {
+        // Recolor the red accents, preserving neutral metal, ink, highlights
+        // and warm skin. Shape selections never choose a palette themselves.
+        return color.R>color.G+24&&color.R>color.B+14 ? Tint(tone,color) : color;
+    }
+    internal static Bitmap ApplyTone(Bitmap source,int tone)
+    {
+        var image=source.Clone(new Rectangle(0,0,source.Width,source.Height),PixelFormat.Format32bppPArgb);
+        var data=image.LockBits(new Rectangle(0,0,image.Width,image.Height),ImageLockMode.ReadWrite,PixelFormat.Format32bppPArgb);
+        try
+        {
+            int[] pixels=new int[image.Width*image.Height];Marshal.Copy(data.Scan0,pixels,0,pixels.Length);
+            for(int i=0;i<pixels.Length;i++)
+            {
+                uint pixel=(uint)pixels[i];int a=(int)(pixel>>24);if(a==0)continue;
+                var color=Color.FromArgb(a,Math.Min(255,(int)((pixel>>16)&255)*255/a),Math.Min(255,(int)((pixel>>8)&255)*255/a),Math.Min(255,(int)(pixel&255)*255/a));
+                var recolored=ToneColor(tone,color);if(recolored.ToArgb()==color.ToArgb())continue;color=recolored;
+                pixels[i]=unchecked((int)((uint)a<<24|(uint)(color.R*a/255)<<16|(uint)(color.G*a/255)<<8|(uint)(color.B*a/255)));
+            }
+            Marshal.Copy(pixels,0,data.Scan0,pixels.Length);
+        }
+        finally{image.UnlockBits(data);}
+        return image;
+    }
+    internal static Color Tint(int style,Color color)
+    {
+        if(style==Pirate)
+        {
+            // Warm gold highlights blend smoothly into deep red shadows.
+            float gold=Math.Max(0,Math.Min(1,(color.R-130)/110f));gold=gold*gold*(3-2*gold);
+            return Color.FromArgb(color.A,(int)(color.R*.88f+color.G*.12f),
+                (int)(color.G*.65f*(1-gold)+(color.R*.70f+color.G*.10f)*gold),
+                (int)(color.B*.70f*(1-gold)+(color.R*.20f+color.B*.20f)*gold));
+        }
+        return style==Cyber ? Color.FromArgb(color.A,color.G,color.R,Math.Min(255,color.R*3/4+color.B/4+45)) : color;
+    }
+}
+
+internal static class CyberpunkArt
+{
+    internal static GraphicsPath Panel(RectangleF r,float cut)
+    {
+        var p=new GraphicsPath();p.AddPolygon(new[]{new PointF(r.Left+cut,r.Top),new PointF(r.Right-cut,r.Top),
+            new PointF(r.Right,r.Top+cut),new PointF(r.Right,r.Bottom-cut),new PointF(r.Right-cut,r.Bottom),
+            new PointF(r.Left+cut,r.Bottom),new PointF(r.Left,r.Bottom-cut),new PointF(r.Left,r.Top+cut)});return p;
+    }
+    internal static void Glow(Graphics g,GraphicsPath path,Color color,float width)
+    {
+        using(var haze=new Pen(Color.FromArgb(color.A/10,color),width+5))
+        using(var halo=new Pen(Color.FromArgb(color.A/4,color),width+2))
+        using(var core=new Pen(color,width))
+        {
+            haze.LineJoin=halo.LineJoin=core.LineJoin=LineJoin.Round;
+            g.DrawPath(haze,path);g.DrawPath(halo,path);g.DrawPath(core,path);
+        }
+    }
+    internal static void Trace(Graphics g,Color color,float width,params PointF[] points)
+    {using(var path=new GraphicsPath()){path.AddLines(points);Glow(g,path,color,width);}}
 }
 
 internal sealed class LayeredRigAssets : IDisposable
@@ -100,6 +212,16 @@ internal sealed class LayeredRigAssets : IDisposable
             }
         }
         catch{Dispose();throw;}
+    }
+    internal void SetTone(int value)
+    {
+        foreach(var pair in Parts)
+        {
+            string name=pair.Key;
+            if(name=="face"||name=="cheeks"||name.StartsWith("mouth"))continue;
+            pair.Value.SetTone(value);
+        }
+        ReferenceHairCap.SetTone(value);ReferenceBackLeft.SetTone(value);ReferenceBackRight.SetTone(value);
     }
     public void Dispose()
     {
@@ -204,6 +326,26 @@ internal sealed class LivingPetPortrait : IDisposable
     bool hitPixelsDirty=true;
     internal readonly LayeredRigAssets Rig;
     internal int HairStyle { get; private set; }
+    internal int HeadwearStyle { get; private set; }
+    internal void SetHeadwearStyle(int value)
+    {
+        value=PetHeadwearStyles.Normalize(value);if(value==HeadwearStyle)return;
+        HeadwearStyle=value;if(value!=PetHeadwearStyles.Helmet)MusicArmorBlend=0;
+        imageDirty=true;hitPixelsDirty=true;
+    }
+    internal int ListeningStyle { get; private set; }
+    internal void SetListeningStyle(int value)
+    {
+        value=PetListeningStyles.Normalize(value);if(value==ListeningStyle)return;
+        ListeningStyle=value;MusicArmorBlend=0;imageDirty=true;hitPixelsDirty=true;
+    }
+    Color PaletteColor(Color color){return PetSkinStyles.ToneColor(tone,color);}
+    int tone;
+    internal void SetTone(int value)
+    {
+        if(value==tone)return;
+        Rig.SetTone(value);tone=value;imageDirty=true;
+    }
     internal RigSprite HairCap { get { return HairStyle==PetHairStyles.Reference ? Rig.ReferenceHairCap : Rig.Parts["hair-cap"]; } }
     internal void SetHairStyle(int value)
     {
@@ -226,7 +368,7 @@ internal sealed class LivingPetPortrait : IDisposable
     internal float MusicBlend { get; private set; }
     internal float MusicMotion { get; private set; }
     internal float MusicArmorBlend { get; private set; }
-    internal float HeadphoneBandBlend { get { return MusicBlend*(1-Smooth(HelmetBlend/.32f)); } }
+    internal float HeadphoneBandBlend { get { return ListeningStyle==PetListeningStyles.Headphones ? MusicBlend*(1-Smooth(HelmetBlend/.32f)) : 0; } }
     internal float MusicEnergy { get { return musicEnergy; } }
     float musicEnergy;
     internal int MouthIndex;
@@ -338,6 +480,7 @@ internal sealed class LivingPetPortrait : IDisposable
         if(name.StartsWith("hair-",StringComparison.Ordinal)&&name!="hair-cap"&&name!="hair-clip")
         {using(var m=LayerMatrix(name))g.MultiplyTransform(m);}
         else g.MultiplyTransform(Rig.Parts[name].Parent=="body" ? bodyPose : headPose);
+        if(name.StartsWith("hair-",StringComparison.Ordinal))ClipHeadwearHair(g);
         Rig.Parts[name].Draw(g,opacity);
         g.Restore(saved);
     }
@@ -364,9 +507,10 @@ internal sealed class LivingPetPortrait : IDisposable
         RigSprite cap=HairCap;RectangleF b=cap.Bounds;
         const float root=105;
         var saved=g.Save();g.MultiplyTransform(headPose);
+        ClipHeadwearHair(g);
         const float crown=75;
         var upper=g.Save();
-        float upperTuck=Smooth((HelmetBlend-.7f)/.3f);
+        float upperTuck=HeadwearStyle!=PetHeadwearStyles.Helmet ? 0 : Smooth((HelmetBlend-.7f)/.3f);
         g.TranslateTransform(0,crown);g.ScaleTransform(1,1-.8f*upperTuck);g.TranslateTransform(0,-crown);
         DrawHairSection(g,cap,new RectangleF(b.Left,b.Top,b.Width,crown-b.Top),0,0);
         g.Restore(upper);
@@ -384,12 +528,16 @@ internal sealed class LivingPetPortrait : IDisposable
     }
     void DrawBackHair(Graphics g)
     {
-        if(HairStyle!=PetHairStyles.Reference)return;
+        if(HairStyle==PetHairStyles.Short)return;
         var saved=g.Save();g.MultiplyTransform(headPose);
+        ClipHeadwearHair(g);
         // Keep the roots attached to the head; the lower locks bend behind
         // the clothing and arms, rather than painting over the desk or scarf.
-        DrawHairSection(g,Rig.ReferenceBackLeft,Rig.ReferenceBackLeft.Bounds,0,CheekHairLeft*1.25f);
-        DrawHairSection(g,Rig.ReferenceBackRight,Rig.ReferenceBackRight.Bounds,0,CheekHairRight*1.25f);
+        bool twin=HairStyle==PetHairStyles.TwinPonytails;
+        var left=twin ? Rig.Parts["hair-ponytail-left"] : Rig.ReferenceBackLeft;
+        var right=twin ? Rig.Parts["hair-ponytail-right"] : Rig.ReferenceBackRight;
+        DrawHairSection(g,left,left.Bounds,0,CheekHairLeft*1.25f);
+        DrawHairSection(g,right,right.Bounds,0,CheekHairRight*1.25f);
         g.Restore(saved);
     }
     static void DrawHairSection(Graphics g,RigSprite sprite,RectangleF area,float topOffset,float bottomOffset,float opacity=1)
@@ -407,11 +555,11 @@ internal sealed class LivingPetPortrait : IDisposable
             area.Width*sprite.Image.Width/b.Width,area.Height*sprite.Image.Height/b.Height);
         var corners=new[] {new PointF(area.Left+topOffset,area.Top),new PointF(area.Right+topOffset,area.Top),
             new PointF(area.Left+bottomOffset,area.Bottom)};
-        if(opacity>=1)g.DrawImage(sprite.Image,corners,source,GraphicsUnit.Pixel);
+        if(opacity>=1)g.DrawImage(sprite.RenderImage,corners,source,GraphicsUnit.Pixel);
         else using(var attributes=new ImageAttributes())
         {
             var color=new ColorMatrix();color.Matrix33=opacity;attributes.SetColorMatrix(color);
-            g.DrawImage(sprite.Image,corners,source,GraphicsUnit.Pixel,attributes);
+            g.DrawImage(sprite.RenderImage,corners,source,GraphicsUnit.Pixel,attributes);
         }
     }
     void DrawNeck(Graphics g)
@@ -528,7 +676,7 @@ internal sealed class LivingPetPortrait : IDisposable
         float musicTarget=resting || !musicPlaying ? 0 : 1;
         MusicBlend+=(musicTarget-MusicBlend)*(float)(1-Math.Exp(-5*Math.Max(0,dt)));
         if(resting)MusicBlend=0;
-        float audioArmorTarget=Smooth((Math.Min(helmet.Part(1),helmet.Part(2))-.15f)/.75f);
+        float audioArmorTarget=HeadwearStyle!=PetHeadwearStyles.Helmet||ListeningStyle!=PetListeningStyles.Headphones ? 0 : Smooth((Math.Min(helmet.Part(1),helmet.Part(2))-.15f)/.75f);
         MusicArmorBlend+=Clamp((audioArmorTarget-MusicArmorBlend)*(float)(1-Math.Exp(-8*Math.Max(0,dt))),
             (float)Math.Max(0,dt)*2);
         if(resting||HelmetBlend==0)MusicArmorBlend=0;
@@ -612,22 +760,48 @@ internal sealed class LivingPetPortrait : IDisposable
         {if(name=="hair-ahoge")DrawTuckedAccessory(g,name);else DrawPart(g,name);}
         DrawTuckedAccessory(g,"hair-clip");
         DrawWorkAccents(g);
+        // The pirate brim covers the remaining headband during the handoff;
+        // ear cups stay below it. Metal armor keeps its audio modules in front.
+        bool musicUnderHat=HeadwearStyle!=PetHeadwearStyles.Helmet||ListeningStyle==PetListeningStyles.Bandana;
+        if(musicUnderHat)DrawMusic(g);
         DrawHelmet(g,false);
-        DrawMusic(g);
+        if(!musicUnderHat)DrawMusic(g);
     }
     void DrawMusic(Graphics g)
     {
         if(MusicBlend<.01f)return;
-        var saved=g.Save();g.MultiplyTransform(headPose);
+        if(ListeningStyle==PetListeningStyles.NeuralAudio){DrawNeuralAudio(g);return;}
         int alpha=(int)(255*MusicBlend*(1-MusicArmorBlend));
+        if(ListeningStyle==PetListeningStyles.Bandana)DrawBandana(g);
+        else DrawHeadphones(g);
+        // Small hand-drawn notes stay inside the portrait/hit-test canvas.
+        var saved=g.Save();g.MultiplyTransform(headPose);
+        for(int i=0;i<3;i++)
+        {
+            double phase=(time*.45+i/3.0)%1;
+            float x=i%2==0 ? 43 : 258,y=91-(float)phase*29;
+            int opacity=(int)(alpha*Math.Sin(phase*Math.PI)*.85);
+            using(var note=new Pen(PaletteColor(Color.FromArgb(opacity,164,49,70)),1.8f))
+            using(var fill=new SolidBrush(note.Color))
+            {
+                g.FillEllipse(fill,x,y,5,3.5f);g.DrawLine(note,x+4,y+1,x+4,y-10);
+                g.DrawBezier(note,x+4,y-10,x+10,y-8,x+10,y-5,x+8,y-4);
+            }
+        }
+        g.Restore(saved);
+    }
+    void DrawHeadphones(Graphics g)
+    {
+        int alpha=(int)(255*MusicBlend*(1-MusicArmorBlend));
+        var saved=g.Save();g.MultiplyTransform(headPose);
         int bandAlpha=(int)(255*HeadphoneBandBlend);
         float rise=(1-MusicBlend)*12;
         g.TranslateTransform(0,-rise);
-        Color ink=Color.FromArgb(alpha,58,45,61),red=Color.FromArgb(alpha,164,49,70);
+        Color ink=Color.FromArgb(alpha,58,45,61),red=PaletteColor(Color.FromArgb(alpha,164,49,70));
         // A silver outer arch and a soft dark underside follow the skull.
         using(var arch=new Pen(Color.FromArgb(bandAlpha,58,45,61),8))
         using(var silver=new Pen(Color.FromArgb(bandAlpha,234,229,239),4.5f))
-        using(var seam=new Pen(Color.FromArgb(bandAlpha,164,49,70),1.2f))
+        using(var seam=new Pen(PaletteColor(Color.FromArgb(bandAlpha,164,49,70)),1.2f))
         {
             arch.StartCap=arch.EndCap=silver.StartCap=silver.EndCap=LineCap.Round;
             g.DrawBezier(arch,70,124,58,33,232,28,239,126);
@@ -647,24 +821,100 @@ internal sealed class LivingPetPortrait : IDisposable
         }
         g.Restore(saved);
         saved=g.Save();g.MultiplyTransform(headPose);DrawArmoredMusic(g);g.Restore(saved);
-        // Small hand-drawn notes stay inside the portrait/hit-test canvas.
-        saved=g.Save();g.MultiplyTransform(headPose);
-        for(int i=0;i<3;i++)
+    }
+    void DrawNeuralAudio(Graphics g)
+    {
+        int alpha=(int)(255*MusicBlend);if(alpha==0)return;
+        var saved=g.Save();g.MultiplyTransform(headPose);g.TranslateTransform(0,-10*(1-MusicBlend));
+        for(int side=0;side<2;side++)
         {
-            double phase=(time*.45+i/3.0)%1;
-            float x=i%2==0 ? 43 : 258,y=91-(float)phase*29;
-            int opacity=(int)(alpha*Math.Sin(phase*Math.PI)*.85);
-            using(var note=new Pen(Color.FromArgb(opacity,164,49,70),1.8f))
-            using(var fill=new SolidBrush(note.Color))
+            float x=side==0 ? 67 : 237,y=129+(side==0 ? 0 : 3);
+            Color primary=PetSkinStyles.CyberPrimary(tone,alpha),secondary=PetSkinStyles.CyberSecondary(tone,alpha);
+            using(var mount=CyberpunkArt.Panel(new RectangleF(x-13,y-21,26,43),5))
+            using(var shell=new LinearGradientBrush(new RectangleF(x-13,y-21,26,43),Color.FromArgb(alpha,69,77,98),Color.FromArgb(alpha,19,25,42),25f))
+            using(var ink=new Pen(Color.FromArgb(alpha,12,17,29),2))
             {
-                g.FillEllipse(fill,x,y,5,3.5f);g.DrawLine(note,x+4,y+1,x+4,y-10);
-                g.DrawBezier(note,x+4,y-10,x+10,y-8,x+10,y-5,x+8,y-4);
+                g.FillPath(shell,mount);g.DrawPath(ink,mount);
+                var edge=g.Save();g.SetClip(mount,CombineMode.Intersect);
+                using(var seam=new Pen(primary,1.5f))g.DrawLine(seam,x-10,y-12,x-10,y+11);
+                using(var vent=new Pen(Color.FromArgb(alpha,113,126,149),1))
+                    for(int i=0;i<3;i++)g.DrawLine(vent,x+5,y-13+i*3,x+9,y-15+i*3);
+                g.Restore(edge);
             }
+            using(var driver=CyberpunkArt.Panel(new RectangleF(x-8,y-10,16,22),4))
+            using(var dark=new SolidBrush(Color.FromArgb(alpha,12,22,37)))
+            {g.FillPath(dark,driver);CyberpunkArt.Glow(g,driver,primary,1.1f);}
+            float beat=musicEnergy*(float)(.5+.5*Math.Sin(time*5.2+side));
+            using(var ring=new Pen(secondary,1.8f))g.DrawArc(ring,x-5,y-6,10,13,-90+(float)time*30,240);
+            using(var core=new SolidBrush(Color.FromArgb(alpha,216,255,255)))g.FillEllipse(core,x-1.5f,y-1,3,3);
+            for(int i=0;i<3;i++)
+            using(var led=new Pen(i==1 ? secondary : primary,1.2f))
+                g.DrawLine(led,x-4+i*4,y+16,x-4+i*4,y+13-beat*(3+i));
+            using(var fin=CyberpunkArt.Panel(new RectangleF(x-7,y-29,14,8),2))
+            using(var dark=new SolidBrush(Color.FromArgb(alpha,29,38,59)))
+            using(var edge=new Pen(primary,1)) {g.FillPath(dark,fin);g.DrawPath(edge,fin);}
+        }
+        // Packet-like squares replace musical notes, following the same head.
+        for(int i=0;i<4;i++)
+        {
+            double phase=(time*.38+i*.25)%1;float x=i%2==0 ? 42 : 259,y=103-(float)phase*38;
+            using(var packet=new Pen(PetSkinStyles.CyberPrimary(tone,(int)(alpha*Math.Sin(phase*Math.PI)*.65)),1))
+                g.DrawRectangle(packet,x,y,3+i%2,3+i%2);
+        }
+        g.Restore(saved);
+    }
+    void DrawBandana(Graphics g)
+    {
+        float visible=MusicBlend*(HeadwearStyle==PetHeadwearStyles.Helmet ? 1-Smooth(HelmetBlend/.32f) : 1);
+        int alpha=(int)(255*visible);if(alpha==0)return;
+        var saved=g.Save();g.MultiplyTransform(headPose);g.TranslateTransform(0,-(1-MusicBlend)*12);
+        using(var cloth=new GraphicsPath())
+        using(var band=new GraphicsPath())
+        using(var tails=new GraphicsPath())
+        using(var ink=new Pen(Color.FromArgb(alpha,49,28,39),1.5f))
+        {
+            cloth.AddBezier(66,95,66,48,97,23,149,22);
+            cloth.AddBezier(149,22,200,21,234,47,237,95);
+            cloth.AddBezier(237,95,202,109,104,110,66,95);cloth.CloseFigure();
+            tails.AddBezier(237,96,255,105,259,130,252,149);
+            tails.AddLine(252,149,242,138);tails.AddLine(242,138,236,147);
+            tails.AddBezier(236,147,241,125,230,113,232,101);tails.CloseFigure();
+            tails.StartFigure();tails.AddBezier(239,95,260,98,264,111,266,124);
+            tails.AddLine(266,124,254,120);tails.AddLine(254,120,248,126);
+            tails.AddBezier(248,126,251,112,235,110,235,102);tails.CloseFigure();
+            using(var fabric=new LinearGradientBrush(new RectangleF(65,22,202,130),PaletteColor(Color.FromArgb(alpha,198,56,74)),PaletteColor(Color.FromArgb(alpha,114,26,46)),80f))
+            {g.FillPath(fabric,tails);g.DrawPath(ink,tails);g.FillPath(fabric,cloth);g.DrawPath(ink,cloth);}
+            using(var fold=new Pen(PaletteColor(Color.FromArgb(alpha,236,112,119)),1.4f))
+            {
+                g.DrawBezier(fold,88,71,105,42,133,34,151,32);
+                g.DrawBezier(fold,157,32,190,36,211,55,220,78);
+                g.DrawBezier(fold,241,108,251,117,250,133,247,139);
+            }
+            band.AddBezier(67,84,111,96,196,96,236,83);
+            band.AddLine(236,83,238,99);
+            band.AddBezier(238,99,194,113,109,112,66,100);band.CloseFigure();
+            using(var fill=new SolidBrush(PaletteColor(Color.FromArgb(alpha,154,34,54))))g.FillPath(fill,band);
+            g.DrawPath(ink,band);
+            var clip=g.Save();g.SetClip(band,CombineMode.Intersect);
+            using(var stitch=new Pen(Color.FromArgb(alpha,239,214,184),1))
+            using(var ivory=new SolidBrush(Color.FromArgb(alpha,247,229,202)))
+            {
+                stitch.DashPattern=new[]{2f,3f};g.DrawBezier(stitch,73,88,113,100,191,100,230,88);
+                for(int i=0;i<7;i++)
+                {
+                    float x=88+i*21,y=97+5*(float)Math.Sin(i*Math.PI/6);
+                    g.FillPolygon(ivory,new[]{new PointF(x,y-3),new PointF(x+2.5f,y),new PointF(x,y+3),new PointF(x-2.5f,y)});
+                }
+            }
+            g.Restore(clip);
+            using(var knot=new SolidBrush(PaletteColor(Color.FromArgb(alpha,191,47,67))))
+            {g.FillEllipse(knot,228,89,17,17);g.DrawEllipse(ink,228,89,17,17);}
         }
         g.Restore(saved);
     }
     void DrawArmoredMusic(Graphics g)
     {
+        if(HeadwearStyle==PetHeadwearStyles.PirateHat)return;
         float blend=MusicBlend*MusicArmorBlend;if(blend<.01f)return;
         var faceSafe=g.Save();
         using(var opening=HelmetFaceOpening())g.SetClip(opening,CombineMode.Exclude);
@@ -681,7 +931,7 @@ internal sealed class LivingPetPortrait : IDisposable
             using(var rim=new Pen(Color.FromArgb(alpha,28,27,31),1.5f))
             using(var shell=new SolidBrush(Color.FromArgb(alpha,237,237,239)))
             using(var pad=new SolidBrush(Color.FromArgb(alpha,39,37,43)))
-            using(var ring=new Pen(Color.FromArgb((int)(alpha*(.45f+.45f*energy)),182,38,56),1.8f))
+            using(var ring=new Pen(PaletteColor(Color.FromArgb((int)(alpha*(.45f+.45f*energy)),182,38,56)),1.8f))
             {
                 g.FillEllipse(shell,x-10,y-12,20,24);g.DrawEllipse(rim,x-10,y-12,20,24);
                 g.FillEllipse(pad,x-7,y-8,14,16);
@@ -689,13 +939,13 @@ internal sealed class LivingPetPortrait : IDisposable
                 for(int bar=0;bar<3;bar++)
                 {
                     float height=2+energy*(3+3*(float)(.5+.5*Math.Sin(time*5.2-bar*.9+side*.6)));
-                    using(var led=new Pen(Color.FromArgb(alpha,244,110,125),1.4f))
+                    using(var led=new Pen(PaletteColor(Color.FromArgb(alpha,244,110,125)),1.4f))
                         g.DrawLine(led,x-3+bar*3,y-height/2,x-3+bar*3,y+height/2);
                 }
             }
             // A restrained outward sound-wave pulse replaces floating notes.
             float wave=(float)((time*.6+side*.15)%1),radius=12+wave*5;
-            using(var echo=new Pen(Color.FromArgb((int)(alpha*(1-wave)*energy*.55f),185,52,73),1))
+            using(var echo=new Pen(PaletteColor(Color.FromArgb((int)(alpha*(1-wave)*energy*.55f),185,52,73)),1))
                 g.DrawArc(echo,x-radius,y-radius,radius*2,radius*2,side==0 ? 135 : -45,90);
             g.Restore(saved);
 
@@ -707,7 +957,7 @@ internal sealed class LivingPetPortrait : IDisposable
             {
                 float height=1.5f+energy*(2+3*(float)(.5+.5*Math.Sin(time*5.2-bar*.8)));
                 float px=side==0 ? 72+bar*4 : 232-bar*4;
-                using(var led=new Pen(Color.FromArgb((int)(alpha*face*.9f),181,37,54),1.6f))
+                using(var led=new Pen(PaletteColor(Color.FromArgb((int)(alpha*face*.9f),181,37,54)),1.6f))
                     g.DrawLine(led,px,133-height/2,px,133+height/2);
             }
             g.Restore(saved);
@@ -716,6 +966,17 @@ internal sealed class LivingPetPortrait : IDisposable
     }
     void DrawTuckedAccessory(Graphics g,string name)
     {
+        if(HeadwearStyle==PetHeadwearStyles.CyberVisor&&!(ListeningStyle==PetListeningStyles.Bandana&&MusicBlend>.01f))
+        {
+            var state=g.Save();using(var pose=LayerMatrix(name))g.MultiplyTransform(pose);
+            Rig.Parts[name].Draw(g);g.Restore(state);return;
+        }
+        if(HeadwearStyle==PetHeadwearStyles.PirateHat||(ListeningStyle==PetListeningStyles.Bandana&&MusicBlend>.01f))
+        {
+            float clothCover=ListeningStyle==PetListeningStyles.Bandana ? Smooth(MusicBlend/.5f) : 0;
+            var clothPose=g.Save();using(var pose=LayerMatrix(name))g.MultiplyTransform(pose);
+            Rig.Parts[name].Draw(g,1-Math.Max(Smooth(HelmetBlend/.5f),clothCover));g.Restore(clothPose);return;
+        }
         float tuck=name=="hair-clip" ? Smooth((HelmetBlend-.12f)/.28f) : HelmetHairCover;var saved=g.Save();
         using(var pose=LayerMatrix(name))g.MultiplyTransform(pose);
         if(name=="hair-ahoge")
@@ -727,6 +988,8 @@ internal sealed class LivingPetPortrait : IDisposable
     internal void DrawHelmet(Graphics g,bool rear)
     {
         if(HelmetBlend<=0)return;
+        if(HeadwearStyle==PetHeadwearStyles.CyberVisor){DrawCyberVisor(g,rear);return;}
+        if(HeadwearStyle==PetHeadwearStyles.PirateHat){DrawPirateHat(g,rear);return;}
         var saved=g.Save();g.MultiplyTransform(headPose);
         g.SetClip(new RectangleF(36,-8,232,183),CombineMode.Intersect);
         if(rear)
@@ -738,10 +1001,6 @@ internal sealed class LivingPetPortrait : IDisposable
             {scalp.AddEllipse(81,43,142,125);g.SetClip(scalp,CombineMode.Intersect);}
             DrawHelmetMechanism(g);g.Restore(saved);return;
         }
-        // The open-face helmet leaves a fixed, head-local facial aperture.
-        // It applies before part transforms, so moving plates and their lights
-        // cannot sweep over the eyes, cheeks or mouth during either direction.
-        using(var opening=HelmetFaceOpening())g.SetClip(opening,CombineMode.Exclude);
         // Visible armor always stays outside the scalp. Splitting one plate
         // between rear/front at a moving screen-space boundary sliced hair
         // across the metal rim, especially when reversing midway.
@@ -760,6 +1019,123 @@ internal sealed class LivingPetPortrait : IDisposable
             g.Restore(part);
         }
         DrawHelmetPower(g);
+        g.Restore(saved);
+    }
+    void DrawCyberVisor(Graphics g,bool rear)
+    {
+        if(rear)return;
+        float blend=Smooth(HelmetBlend);int alpha=(int)(255*blend);if(alpha==0)return;
+        var saved=g.Save();g.MultiplyTransform(headPose);g.TranslateTransform(0,-(1-blend)*16);
+        // The lens is a forehead HUD. Keep the original irises, lashes and
+        // mouth below it, with audio modules mounted farther down the ears.
+        Color cyan=PetSkinStyles.CyberPrimary(tone,alpha),pink=PetSkinStyles.CyberSecondary(tone,alpha);
+        using(var bridge=CyberpunkArt.Panel(new RectangleF(72,69,162,18),5))
+        using(var fill=new LinearGradientBrush(new RectangleF(72,69,162,18),Color.FromArgb(alpha,73,80,104),Color.FromArgb(alpha,23,29,47),90f))
+        using(var ink=new Pen(Color.FromArgb(alpha,13,19,32),1.9f))
+        {g.FillPath(fill,bridge);g.DrawPath(ink,bridge);}
+        using(var lens=new GraphicsPath())
+        {
+            lens.AddPolygon(new[]{new PointF(79,80),new PointF(123,79),new PointF(138,87),new PointF(167,87),new PointF(180,79),
+                new PointF(227,82),new PointF(222,104),new PointF(178,109),new PointF(166,102),new PointF(138,102),new PointF(126,109),new PointF(83,105)});
+            using(var glass=new LinearGradientBrush(new RectangleF(79,79,148,30),Color.FromArgb((int)(alpha*.75f),17,51,72),Color.FromArgb((int)(alpha*.35f),36,120,149),90f))g.FillPath(glass,lens);
+            CyberpunkArt.Glow(g,lens,cyan,1.5f);
+            var clipped=g.Save();g.SetClip(lens,CombineMode.Intersect);
+            using(var reflection=new Pen(Color.FromArgb(alpha/3,205,255,255),3))
+            {g.DrawLine(reflection,95,79,85,109);g.DrawLine(reflection,104,79,94,109);g.DrawLine(reflection,208,79,198,109);}
+            using(var scan=new Pen(PetSkinStyles.CyberPrimary(tone,alpha/3),.65f))
+                for(int i=0;i<5;i++)g.DrawLine(scan,82,84+i*5,224,84+i*5);
+            using(var target=new Pen(pink,1.2f))
+            {g.DrawEllipse(target,192,88,12,12);g.DrawLine(target,198,85,198,90);g.DrawLine(target,203,94,208,94);}
+            g.Restore(clipped);
+        }
+        foreach(float x in new[]{68f,227f})
+        using(var hub=CyberpunkArt.Panel(new RectangleF(x,77,13,31),3))
+        using(var black=new SolidBrush(Color.FromArgb(alpha,27,33,51)))
+        using(var edge=new Pen(Color.FromArgb(alpha,9,15,26),1.5f))
+        {
+            g.FillPath(black,hub);g.DrawPath(edge,hub);
+            using(var led=new Pen(x<100 ? pink : cyan,2))g.DrawLine(led,x+6,84,x+6,100);
+        }
+        CyberpunkArt.Trace(g,pink,1.7f,new PointF(89,73),new PointF(121,73),new PointF(129,78));
+        CyberpunkArt.Trace(g,cyan,1.2f,new PointF(177,74),new PointF(184,71),new PointF(213,71));
+        using(var caution=new Pen(Color.FromArgb(alpha,248,213,105),1.7f))
+            for(int i=0;i<3;i++)g.DrawLine(caution,145+i*5,73,142+i*5,78);
+        g.Restore(saved);
+    }
+    void ClipHeadwearHair(Graphics g)
+    {
+        float hatCover=HeadwearStyle==PetHeadwearStyles.PirateHat ? Smooth((HelmetBlend-.7f)/.3f) : 0;
+        float clothCover=ListeningStyle==PetListeningStyles.Bandana ? Smooth(MusicBlend) : 0;
+        float tuck=44*Math.Max(hatCover,clothCover);if(tuck<=0)return;
+        g.SetClip(new RectangleF(-100,-100,500,100+tuck),CombineMode.Exclude);
+    }
+    static GraphicsPath PirateHatCrown()
+    {
+        var p=new GraphicsPath();
+        p.AddBezier(83,70,84,32,110,14,150,14);
+        p.AddBezier(150,14,190,14,216,32,217,70);
+        p.AddBezier(217,70,181,88,119,88,83,70);p.CloseFigure();return p;
+    }
+    static GraphicsPath PirateHatBrim()
+    {
+        var p=new GraphicsPath();
+        p.AddBezier(39,38,62,50,75,53,92,44);
+        p.AddBezier(92,44,114,30,130,23,150,23);
+        p.AddBezier(150,23,170,23,186,30,208,44);
+        p.AddBezier(208,44,225,53,238,50,261,38);
+        p.AddBezier(261,38,259,62,249,80,227,85);
+        p.AddBezier(227,85,179,97,121,97,73,85);
+        p.AddBezier(73,85,51,80,41,62,39,38);p.CloseFigure();return p;
+    }
+    void DrawPirateHat(Graphics g,bool rear)
+    {
+        // One front surface keeps the brim above both hairstyles without
+        // hiding long side locks or placing cloth around the live face.
+        if(rear)return;
+        float blend=Smooth(HelmetBlend);int alpha=(int)(255*blend);if(alpha==0)return;
+        var saved=g.Save();g.MultiplyTransform(headPose);g.TranslateTransform(0,-(1-blend)*24);
+        using(var crown=PirateHatCrown())
+        using(var brim=PirateHatBrim())
+        using(var ink=new Pen(Color.FromArgb(alpha,29,26,33),1.9f))
+        {
+            using(var felt=new LinearGradientBrush(new RectangleF(80,14,140,70),Color.FromArgb(alpha,82,76,87),Color.FromArgb(alpha,38,35,43),90f))
+            {g.FillPath(felt,crown);g.DrawPath(ink,crown);}
+            using(var front=new LinearGradientBrush(new RectangleF(39,23,222,72),Color.FromArgb(alpha,67,61,73),Color.FromArgb(alpha,30,28,36),90f))
+                g.FillPath(front,brim);
+            var clipped=g.Save();g.SetClip(brim,CombineMode.Intersect);
+            using(var band=new Pen(PaletteColor(Color.FromArgb(alpha,157,38,57)),9))
+                g.DrawBezier(band,57,77,108,94,192,94,243,77);
+            using(var piping=new Pen(Color.FromArgb(alpha,217,195,151),2.7f))
+            {
+                piping.LineJoin=LineJoin.Round;
+                g.DrawBezier(piping,44,43,66,55,77,57,94,48);
+                g.DrawBezier(piping,94,48,116,34,131,28,150,28);
+                g.DrawBezier(piping,150,28,169,28,184,34,206,48);
+                g.DrawBezier(piping,206,48,223,57,234,55,256,43);
+                g.DrawBezier(piping,57,77,108,94,192,94,243,77);
+            }
+            using(var fold=new Pen(Color.FromArgb(alpha,107,96,112),1.25f))
+            {
+                g.DrawBezier(fold,47,51,51,63,61,71,78,73);
+                g.DrawBezier(fold,253,51,249,63,239,71,222,73);
+            }
+            // Small ivory skull and crossbones remain readable at pet size.
+            using(var bones=new Pen(Color.FromArgb(alpha,238,226,200),3))
+            using(var ivory=new SolidBrush(bones.Color))
+            using(var dark=new SolidBrush(Color.FromArgb(alpha,37,33,41)))
+            {
+                bones.StartCap=bones.EndCap=LineCap.Round;
+                g.DrawLine(bones,137,62,163,77);g.DrawLine(bones,163,62,137,77);
+                foreach(var point in new[]{new PointF(136,61),new PointF(164,61),new PointF(136,78),new PointF(164,78)})
+                    g.FillEllipse(ivory,point.X-2,point.Y-2,4,4);
+                g.FillEllipse(ivory,140,43,20,19);g.FillRectangle(ivory,144,57,12,8);
+                g.FillEllipse(dark,143,50,5,6);g.FillEllipse(dark,152,50,5,6);
+                g.FillPolygon(dark,new[]{new PointF(150,57),new PointF(148,60),new PointF(152,60)});
+                using(var tooth=new Pen(dark,1))
+                {g.DrawLine(tooth,148,62,148,65);g.DrawLine(tooth,152,62,152,65);}
+            }
+            g.Restore(clipped);g.DrawPath(ink,brim);
+        }
         g.Restore(saved);
     }
     internal static GraphicsPath HelmetFaceOpening()
@@ -797,24 +1173,16 @@ internal sealed class LivingPetPortrait : IDisposable
     void DrawHelmetPower(Graphics g)
     {
         float power=Math.Max(0,Math.Min(1,(HelmetVisor-.92f)/.08f));if(power<=0)return;
-        float pulse=helmet.Pulse,breath=.5f+.5f*(float)Math.Sin(time*2.4);
-        float audio=MusicBlend*MusicArmorBlend*musicEnergy*(.65f+.35f*(float)Math.Sin(time*3.6));
-        var eye=new[] {new PointF(95,89),new PointF(152,106),new PointF(210,89)};
-        using(var glow=new Pen(Color.FromArgb((int)((20+15*breath+55*pulse+65*audio)*power),210,20,34),1.15f))
-        using(var hot=new Pen(Color.FromArgb((int)(80*pulse*power),255,210,210),.35f))
-        {glow.LineJoin=hot.LineJoin=LineJoin.Round;g.DrawLines(glow,eye);g.DrawLines(hot,eye);}
-        // A short traveling lock highlight follows the V seam, then fades.
-        if(pulse>.02f)
-        {
-            float t=(float)((time*1.9)%1),x=95+115*t,y=106-Math.Abs(t-.5f)*34;
-            using(var spark=new SolidBrush(Color.FromArgb((int)(150*pulse*power),255,230,230)))g.FillEllipse(spark,x-1,y-1,2,2);
-        }
+        // A quiet silver glint along the central ridge replaces the former
+        // red neon V, keeping the reference helmet's plain medieval finish.
+        float pulse=helmet.Pulse;if(pulse<=.02f)return;
+        using(var glint=new Pen(Color.FromArgb((int)(70*pulse*power),255,255,255),.65f))g.DrawLine(glint,152,14,152,89);
     }
     Matrix CurrentHelmetMatrix(int index)
     {return HelmetPartMatrix(index,helmet.Part(0),helmet.Part(index==2||index==4 ? 2 : 1),helmet.Part(index));}
-    // Face and chin panels remain stored; only the crown and temple shells
-    // deploy. The original six-part timing stays intact for smooth reversal.
-    internal static readonly int[] HelmetDrawOrder={1,2,0};
+    // All six plates follow their existing rails. The crown renders last to
+    // keep its dark brow rim continuous over the closed face plates.
+    internal static readonly int[] HelmetDrawOrder={1,2,3,4,5,0};
     static float Closed(float p){return Math.Max(0,Math.Min(1,p));}
     internal static Matrix HelmetCarrierMatrix(float progress)
     {
@@ -934,7 +1302,7 @@ internal sealed class LivingPetPortrait : IDisposable
     }
     internal void DrawBehindDesk(Graphics g)
     {
-        if(HairStyle!=PetHairStyles.Reference)return;
+        if(HairStyle==PetHairStyles.Short)return;
         var saved=g.Save();var r=BoundPetScene.CharacterBounds;
         g.TranslateTransform(r.X,r.Y);g.ScaleTransform(r.Width/Width,r.Height/Height);
         g.SmoothingMode=SmoothingMode.AntiAlias;g.InterpolationMode=InterpolationMode.Bilinear;g.PixelOffsetMode=PixelOffsetMode.HighQuality;

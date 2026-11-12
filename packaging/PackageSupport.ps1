@@ -1,4 +1,4 @@
-$PetAppId = 'DesktopPet.ProkyHoof'
+﻿$PetAppId = 'DesktopPet.ProkyHoof'
 $PetManifestName = '.desktop-pet-install.json'
 
 function Assert-PetPlainPath([string]$Path) {
@@ -135,7 +135,7 @@ namespace PetInstaller {
             var link = (IShellLinkW)new ShellLink();
             try {
                 link.SetPath(target); link.SetWorkingDirectory(workingDirectory);
-                link.SetIconLocation(target, 0); link.SetDescription("DesktopPet");
+                link.SetIconLocation(target, 0); link.SetDescription("桌宠助手");
                 ((IPersistFile)link).Save(path, true);
             } finally { Marshal.FinalReleaseComObject(link); }
         }
@@ -191,7 +191,7 @@ function Remove-PetProgramFiles([string]$Root, $Manifest) {
 
 function New-PetInstallForm([string]$InitialRoot, [bool]$LegacyAvailable, [bool]$ImportLegacy) {
     $form = New-Object Windows.Forms.Form
-    $form.Text = '安装白发小骑士'
+    $form.Text = '安装桌宠助手'
     $form.ClientSize = New-Object Drawing.Size(600,300)
     $form.Font = New-Object Drawing.Font('Microsoft YaHei UI',9)
     $form.StartPosition = 'CenterScreen'
@@ -211,7 +211,7 @@ function New-PetInstallForm([string]$InitialRoot, [bool]$LegacyAvailable, [bool]
     $browse.SetBounds(482,63,98,30)
     $browse.add_Click({
         $dialog = New-Object Windows.Forms.FolderBrowserDialog
-        $dialog.Description = '选择白发小骑士的安装文件夹'
+        $dialog.Description = '选择桌宠助手的安装文件夹'
         $dialog.SelectedPath = $path.Text
         try { if ($dialog.ShowDialog($form) -eq 'OK') { $path.Text = $dialog.SelectedPath } }
         finally { $dialog.Dispose() }

@@ -1,4 +1,4 @@
-param([string]$Version = '1.2.0')
+﻿param([string]$Version = '1.3.0')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use a numeric major.minor.patch version.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -63,7 +63,7 @@ InstallPrompt=
 DisplayLicense=
 FinishMessage=
 TargetName=$setup
-FriendlyName=DesktopPet $Version
+FriendlyName=桌宠助手 $Version
 AppLaunched=powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File Install.ps1
 PostInstallCmd=<None>
 AdminQuietInstCmd=powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File Install.ps1 -Silent

@@ -265,7 +265,7 @@ internal sealed class PetCalendarWindow : KnightWindow
     internal string SaveStatus {get{return status.Text;}}
     internal PetCalendarWindow(string root,bool preview=false,DateTime? initialDate=null)
     {
-        store=new PetCalendarStore(root,preview);Font=uiFont;Text="日历计划 · 白发小骑士";BackColor=KnightUi.Paper;ForeColor=KnightUi.Ink;
+        store=new PetCalendarStore(root,preview);Font=uiFont;Text="日历计划 · "+KnightUi.AppName;BackColor=KnightUi.Paper;ForeColor=KnightUi.Ink;
         StartPosition=FormStartPosition.CenterScreen;AutoScaleMode=AutoScaleMode.Dpi;AutoScaleDimensions=new SizeF(96,96);KeyPreview=true;
         var area=Screen.PrimaryScreen.WorkingArea;
         ClientSize=new Size(Math.Min(1660,area.Width-40),Math.Min(1000,area.Height-50));MinimumSize=new Size(Math.Min(1120,area.Width-40),Math.Min(740,area.Height-40));

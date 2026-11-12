@@ -1,4 +1,4 @@
-param([switch]$Preview)
+param([switch]$Preview,[switch]$OrnamentsOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $cache = Join-Path $projectRoot '.tools\wardrobe'
@@ -15,7 +15,8 @@ try {
     $assembly=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes($library))
     $testRoot=Join-Path $cache ('run-'+[Guid]::NewGuid().ToString('N'))
     $imagePath=if($Preview){Join-Path $projectRoot 'assets\previews\wardrobe-window.png'}else{''}
-    $method=$assembly.GetType('WardrobeTests').GetMethod('Run',[Reflection.BindingFlags]'Static,NonPublic')
+    $testMethod=if($OrnamentsOnly){'CheckDeskOrnaments'}else{'Run'}
+    $method=$assembly.GetType('WardrobeTests').GetMethod($testMethod,[Reflection.BindingFlags]'Static,NonPublic')
     try {$method.Invoke($null,[object[]]@([string]$projectRoot,[string]$testRoot,[string]$imagePath))}
     catch {Write-Host $_.Exception.ToString();throw}
 }

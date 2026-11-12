@@ -1,4 +1,4 @@
-param([string]$Name = 'current', [switch]$KeepFrames, [switch]$StillsOnly, [switch]$Interaction, [switch]$MouseFeedback, [switch]$Helmet, [switch]$Music, [switch]$ArmoredMusic)
+﻿param([string]$Name = 'current', [switch]$KeepFrames, [switch]$StillsOnly, [switch]$Interaction, [switch]$MouseFeedback, [switch]$Helmet, [switch]$Music, [switch]$ArmoredMusic, [switch]$OceanWaves, [switch]$HackerCode)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
@@ -11,13 +11,23 @@ $env:TEMP = $cache; $env:TMP = $cache
 if ($MouseFeedback -and $Name -eq 'current') { $Name = 'current-mouse-feedback' }
 if ($Helmet -and $Name -eq 'current') { $Name = 'current-typing-helmet' }
 if ($Music -and $Name -eq 'current') { $Name = 'current-music' }
+if ($OceanWaves -and $Name -eq 'current') { $Name = 'ocean-waves-soft' }
 if ($ArmoredMusic -and $Name -eq 'current') { $Name = 'current-armored-music' }
+if ($HackerCode -and $Name -eq 'current') { $Name = 'hacker-code-flow' }
 $helper = Join-Path $cache ('DesktopPet.BoundPreview.' + [Guid]::NewGuid().ToString('N') + '.exe')
 $frameRoot = Join-Path $projectRoot ('assets/previews/' + $Name + '-frames')
 try {
     & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /main:BoundPreview /optimize+ /codepage:65001 "/out:$helper" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Runtime.Serialization.dll /r:System.Net.Http.dll /r:System.Web.Extensions.dll /r:System.Security.dll /r:System.IO.Compression.dll (Join-Path $projectRoot 'DesktopPet.cs') (Join-Path $projectRoot 'PetMenu.cs') (Join-Path $projectRoot 'PetWardrobeWindow.cs') (Join-Path $projectRoot 'KnightUi.cs') (Join-Path $projectRoot 'InputFeedback.cs') (Join-Path $projectRoot 'TypingStatistics.cs') (Join-Path $projectRoot 'AssistantPaths.cs') (Join-Path $projectRoot 'PetAssistant.cs') (Join-Path $projectRoot 'PetAssistantWindow.cs') (Join-Path $projectRoot 'BoundPetScene.cs') (Join-Path $projectRoot 'LayeredPetRig.cs') (Join-Path $projectRoot 'MusicPlayback.cs') (Join-Path $projectRoot 'PetCalendar.cs') (Join-Path $projectRoot 'PetCalendarWorkspace.cs') (Join-Path $projectRoot 'PetChat.cs') (Join-Path $projectRoot 'PetVoice.cs') (Join-Path $projectRoot 'PetChatWindow.cs') (Join-Path $PSScriptRoot 'Render-BoundPreview.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Preview compilation failed.' }
-    if ($ArmoredMusic) {
+    if ($HackerCode) {
+        & $helper $projectRoot $frameRoot --hacker-code
+        if ($LASTEXITCODE -ne 0) { throw 'Hacker code preview rendering failed.' }
+    }
+    elseif ($OceanWaves) {
+        & $helper $projectRoot $frameRoot --ocean-waves
+        if ($LASTEXITCODE -ne 0) { throw 'Ocean waves preview rendering failed.' }
+    }
+    elseif ($ArmoredMusic) {
         & $helper $projectRoot $frameRoot --armored-music
         if ($LASTEXITCODE -ne 0) { throw 'Armored music preview rendering failed.' }
     }

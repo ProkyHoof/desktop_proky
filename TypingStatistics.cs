@@ -145,7 +145,7 @@ internal sealed class TypingStatisticsWindow : KnightWindow
     internal TypingStatisticsWindow(TypingStatistics statistics, Func<string> listeningStatus)
     {
         this.statistics = statistics; this.listeningStatus = listeningStatus;
-        Text = "打字统计 · 白发小骑士";
+        Text = "打字统计 · "+KnightUi.AppName;
         Font = uiFont;
         ClientSize = new Size(780, 800); MinimumSize = new Size(660, 740);
         StartPosition = FormStartPosition.CenterScreen;

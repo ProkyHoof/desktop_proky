@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Silent,
     [switch]$NoRegistration,
     [string]$InstallRoot,
@@ -72,18 +72,23 @@ try {
     $migration = Start-Process -FilePath (Join-Path $InstallRoot 'DesktopPet.exe') -ArgumentList '--migrate-data' -Wait -PassThru -WindowStyle Hidden
     if ($migration.ExitCode -ne 0) { throw '个人数据初始化失败。' }
     if (-not $NoRegistration) {
-        $startLink = Join-Path ([Environment]::GetFolderPath('Programs')) '白发小骑士.lnk'
-        $desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) '白发小骑士.lnk'
+        $startLink = Join-Path ([Environment]::GetFolderPath('Programs')) '桌宠助手.lnk'
+        $desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) '桌宠助手.lnk'
         $links = @($startLink)
         if ($createDesktop) { $links += $desktopLink }
         Set-PetShortcuts $InstallRoot $links
+        # Remove only legacy links that still target this installation (or
+        # the previous upgrade location), preserving unrelated shortcuts.
+        $legacyLinks = @((Join-Path ([Environment]::GetFolderPath('Programs')) '白发小骑士.lnk'),(Join-Path ([Environment]::GetFolderPath('Desktop')) '白发小骑士.lnk'))
+        Remove-PetShortcuts $InstallRoot $legacyLinks
+        if ($previous.InstallLocation) { Remove-PetShortcuts $previous.InstallLocation $legacyLinks }
         if (-not $createDesktop) {
             Remove-PetShortcuts $InstallRoot @($desktopLink)
             if ($previous.InstallLocation) { Remove-PetShortcuts $previous.InstallLocation @($desktopLink) }
         }
         [void](New-Item -Path $registration -Force)
         $uninstall = '"' + (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe') + '" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $InstallRoot 'Uninstall.ps1') + '"'
-        $values = @{ DisplayName='白发小骑士 · 键鼠桌宠'; DisplayVersion=$manifest.version; Publisher='ProkyHoof'; InstallLocation=$InstallRoot; DisplayIcon=(Join-Path $InstallRoot 'DesktopPet.exe'); UninstallString=$uninstall; QuietUninstallString=($uninstall + ' -Silent -KeepUserData') }
+        $values = @{ DisplayName='桌宠助手'; DisplayVersion=$manifest.version; Publisher='ProkyHoof'; InstallLocation=$InstallRoot; DisplayIcon=(Join-Path $InstallRoot 'DesktopPet.exe'); UninstallString=$uninstall; QuietUninstallString=($uninstall + ' -Silent -KeepUserData') }
         foreach ($name in $values.Keys) { [void](New-ItemProperty -LiteralPath $registration -Name $name -Value $values[$name] -PropertyType String -Force) }
         foreach ($name in @('NoModify','NoRepair')) { [void](New-ItemProperty -LiteralPath $registration -Name $name -Value 1 -PropertyType DWord -Force) }
         $startupKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -91,7 +96,7 @@ try {
             Set-ItemProperty -LiteralPath $startupKey -Name DesktopPet_ProkyHoof -Value ('"' + (Join-Path $InstallRoot 'DesktopPet.exe') + '"')
         }
     }
-    if (-not $Silent) { [void][Windows.Forms.MessageBox]::Show(('安装完成。可从桌面或开始菜单启动。' + [Environment]::NewLine + '个人数据位置：' + $dataRoot),'白发小骑士') }
+    if (-not $Silent) { [void][Windows.Forms.MessageBox]::Show(('安装完成。可从桌面或开始菜单启动。' + [Environment]::NewLine + '个人数据位置：' + $dataRoot),'桌宠助手') }
 }
 catch {
     if (-not $Silent) { [void][Windows.Forms.MessageBox]::Show($_.Exception.Message, '安装失败', 'OK', 'Error') }

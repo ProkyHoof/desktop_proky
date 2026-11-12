@@ -12,6 +12,12 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
+[assembly: System.Reflection.AssemblyTitle("桌宠助手")]
+[assembly: System.Reflection.AssemblyProduct("桌宠助手")]
+[assembly: System.Reflection.AssemblyDescription("桌宠助手")]
+[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
+
 internal static class PetStorage
 {
     internal static string DataRoot(string installRoot)
@@ -195,6 +201,7 @@ internal sealed class KeyboardPetWindow : Form
     Point pressCursor, pressLocation, lastLocation;
     int spriteWidth = 336;
     int hairStyle = PetHairStyles.Reference;
+    int keyboardStyle,mouseStyle,padStyle,headwearStyle,skinPalette,musicStyle,listeningStyle,ornamentStyle;
     PetWardrobeWindow wardrobeWindow;
     bool bubbleKeys;
     PetCalendarWindow calendarWindow;
@@ -228,7 +235,7 @@ internal sealed class KeyboardPetWindow : Form
         configPath = Path.Combine(this.dataRoot, "keyboard_pet_config.json");
         shutdown = new EventWaitHandle(false, EventResetMode.ManualReset, preview ? null : Program.ExitEventName);
         shutdown.Reset();
-        Text = "白发小骑士 · 键鼠桌宠";
+        Text = KnightUi.AppName;
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
         string config = "";
@@ -240,6 +247,14 @@ internal sealed class KeyboardPetWindow : Form
         follow = ReadInt(config, "follow", 1) != 0;
         followMusic = ReadInt(config, "followMusic", 1) != 0;
         hairStyle = PetHairStyles.Normalize(ReadInt(config, "hairStyle", PetHairStyles.Reference));
+        keyboardStyle=PetKeyboardStyles.Normalize(ReadInt(config,"keyboardShape",0));
+        mouseStyle=PetMouseStyles.Normalize(ReadInt(config,"mouseShape",0));
+        padStyle=PetPadStyles.Normalize(ReadInt(config,"mousePadShape",0));
+        headwearStyle=PetHeadwearStyles.Normalize(ReadInt(config,"headwearShape",0));
+        skinPalette=PetSkinStyles.Normalize(ReadInt(config,"skinPalette",0));
+        musicStyle=PetMusicStyles.Normalize(ReadInt(config,"musicStyle",0));
+        listeningStyle=PetListeningStyles.Normalize(ReadInt(config,"listeningStyle",0));
+        ornamentStyle=PetDeskOrnaments.Normalize(ReadInt(config,"deskOrnament",0));
         bubbleKeys = ReadInt(config, "bubbleKeys", 0) == 1;
         SetSpriteSize(spriteWidth);
         Rectangle work = Screen.PrimaryScreen.WorkingArea;
@@ -364,6 +379,7 @@ internal sealed class KeyboardPetWindow : Form
         if (sprites != null) sprites.Dispose();
         sprites = replacement; scene = replacementScene; spriteWidth = width;
         scene.Portrait.SetHairStyle(hairStyle);
+        scene.SetKeyboardStyle(keyboardStyle);scene.SetMouseStyle(mouseStyle);scene.SetPadStyle(padStyle);scene.Portrait.SetHeadwearStyle(headwearStyle);scene.SetTone(skinPalette);scene.SetMusicStyle(musicStyle);scene.Portrait.SetListeningStyle(listeningStyle);scene.SetOrnamentStyle(ornamentStyle);
         inputState.SetBubbleMode(bubbleKeys);
         scene.SetViewWidth(BoundPetScene.CompactWidth);
         Size = new Size((int)Math.Round(scene.ViewWidth * SceneScale), (int)Math.Round(BoundPetScene.WorldHeight * SceneScale));
@@ -455,18 +471,23 @@ internal sealed class KeyboardPetWindow : Form
     {
         if(wardrobeWindow==null||wardrobeWindow.IsDisposed)
         {
-            var window=new PetWardrobeWindow(root,hairStyle,ApplyWardrobe,preview);wardrobeWindow=window;
+            var window=new PetWardrobeWindow(root,hairStyle,keyboardStyle,mouseStyle,padStyle,headwearStyle,skinPalette,musicStyle,listeningStyle,ornamentStyle,ApplyWardrobeWithOrnament,preview);wardrobeWindow=window;
             window.FormClosed+=(s,e)=>{if(wardrobeWindow==window)wardrobeWindow=null;};
         }
         if(wardrobeWindow.WindowState==FormWindowState.Minimized)wardrobeWindow.WindowState=FormWindowState.Normal;
         wardrobeWindow.Show();wardrobeWindow.Activate();
     }
-    void ApplyWardrobe(int nextHair)
+    void ApplyWardrobe(int nextHair,int nextKeyboard,int nextMouse,int nextPad,int nextHeadwear,int nextPalette,int nextMusic,int nextListening)
+    {ApplyWardrobeWithOrnament(nextHair,nextKeyboard,nextMouse,nextPad,nextHeadwear,nextPalette,nextMusic,nextListening,ornamentStyle);}
+    void ApplyWardrobeWithOrnament(int nextHair,int nextKeyboard,int nextMouse,int nextPad,int nextHeadwear,int nextPalette,int nextMusic,int nextListening,int nextOrnament)
     {
-        int oldHair=hairStyle;hairStyle=PetHairStyles.Normalize(nextHair);
+        int oldHair=hairStyle,oldKeyboard=keyboardStyle,oldMouse=mouseStyle,oldPad=padStyle,oldHeadwear=headwearStyle,oldPalette=skinPalette,oldMusic=musicStyle,oldListening=listeningStyle,oldOrnament=ornamentStyle;
+        hairStyle=PetHairStyles.Normalize(nextHair);keyboardStyle=PetKeyboardStyles.Normalize(nextKeyboard);mouseStyle=PetMouseStyles.Normalize(nextMouse);padStyle=PetPadStyles.Normalize(nextPad);headwearStyle=PetHeadwearStyles.Normalize(nextHeadwear);
+        skinPalette=PetSkinStyles.Normalize(nextPalette);musicStyle=PetMusicStyles.Normalize(nextMusic);listeningStyle=PetListeningStyles.Normalize(nextListening);
+        ornamentStyle=PetDeskOrnaments.Normalize(nextOrnament);
         try {if(!preview)WriteConfig();}
-        catch {hairStyle=oldHair;throw;}
-        scene.Portrait.SetHairStyle(hairStyle);Present(true);
+        catch {hairStyle=oldHair;keyboardStyle=oldKeyboard;mouseStyle=oldMouse;padStyle=oldPad;headwearStyle=oldHeadwear;skinPalette=oldPalette;musicStyle=oldMusic;listeningStyle=oldListening;ornamentStyle=oldOrnament;throw;}
+        scene.Portrait.SetHairStyle(hairStyle);scene.SetKeyboardStyle(keyboardStyle);scene.SetMouseStyle(mouseStyle);scene.SetPadStyle(padStyle);scene.Portrait.SetHeadwearStyle(headwearStyle);scene.SetTone(skinPalette);scene.SetMusicStyle(musicStyle);scene.Portrait.SetListeningStyle(listeningStyle);scene.SetOrnamentStyle(ornamentStyle);Present(true);
     }
     void OpenAssistant()
     {
@@ -646,8 +667,8 @@ internal sealed class KeyboardPetWindow : Form
     void WriteConfig()
     {
         string text=String.Format(CultureInfo.InvariantCulture,
-            "{{\"x\":{0},\"y\":{1},\"size\":{2},\"follow\":{3},\"hairStyle\":{4},\"bubbleKeys\":{5},\"followMusic\":{6}}}",
-            Left,Top,spriteWidth,follow ? 1 : 0,hairStyle,bubbleKeys ? 1 : 0,followMusic ? 1 : 0);
+            "{{\"x\":{0},\"y\":{1},\"size\":{2},\"follow\":{3},\"hairStyle\":{4},\"bubbleKeys\":{5},\"followMusic\":{6},\"keyboardShape\":{7},\"mouseShape\":{8},\"skinPalette\":{9},\"mousePadShape\":{10},\"headwearShape\":{11},\"musicStyle\":{12},\"listeningStyle\":{13},\"deskOrnament\":{14}}}",
+            Left,Top,spriteWidth,follow ? 1 : 0,hairStyle,bubbleKeys ? 1 : 0,followMusic ? 1 : 0,keyboardStyle,mouseStyle,skinPalette,padStyle,headwearStyle,musicStyle,listeningStyle,ornamentStyle);
         Directory.CreateDirectory(dataRoot);string temp=configPath+".tmp";File.WriteAllText(temp,text);
         if(File.Exists(configPath))File.Replace(temp,configPath,configPath+".bak");else File.Move(temp,configPath);
     }

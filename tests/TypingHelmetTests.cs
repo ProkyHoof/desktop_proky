@@ -64,7 +64,7 @@ internal static class TypingHelmetTests
             if(action.Blend>.01f&&!visible)appearances++;
             visible=action.Blend>.01f;
             if(frame==180)Check(action.Part(0)>action.Part(1)&&action.Part(1)>action.Part(2)&&action.Visor==0,"Crown approaches before its side and face rails extend");
-            if(frame==240)Check(action.Part(3)>action.Part(4)+.1f&&action.Part(4)>action.Part(5),"Stored face carriage timing remains ordered for smooth reversal");
+            if(frame==240)Check(action.Part(3)>action.Part(4)+.1f&&action.Part(4)>action.Part(5),"Face plates close in order before the chin locks");
             if(frame==315)Check(action.Visor>.99f,"Open helmet reaches its settled state after the slower deployment");
             if(frame==550)Check(action.Blend==0&&action.Visor==0,"Panels retract and return to the original portrait");
         }
@@ -120,6 +120,29 @@ internal static class TypingHelmetTests
             for(int i=0;i<6;i++)Check(Math.Abs(paced.Part(i)-1)<.005,"Both idle and interaction frame rates reach the same sealed pose");
         }
     }
+    static void OriginalJaw(string root)
+    {
+        string design=Path.Combine(root,"assets","keyboard-knight","helmet-design");
+        using(var source=new Bitmap(Path.Combine(design,"silver-knight-source.png")))
+        using(var edited=new Bitmap(Path.Combine(design,"silver-knight-original-jaw-source.png")))
+        {
+            Check(source.Size==edited.Size,"The original helmet canvas is unchanged");
+            int erased=0;
+            for(int y=0;y<source.Height;y++)for(int x=0;x<source.Width;x++)
+            {
+                Color before=source.GetPixel(x,y),after=edited.GetPixel(x,y);
+                if(after.A>0)Check(before.ToArgb()==after.ToArgb(),"Every retained helmet pixel comes unchanged from the original");
+                else if(before.A>0)erased++;
+            }
+            Check(erased>100000,"The central faceplate is actually removed");
+            for(int x=430;x<=600;x++)for(int y=(int)Math.Ceiling(845+(x-430)*.365);y<=960;y++)
+                foreach(int jawX in new[] {x,source.Width-x})
+                    Check(source.GetPixel(jawX,y).ToArgb()==edited.GetPixel(jawX,y).ToArgb(),"Both original jaw flanges retain every pixel");
+            foreach(var point in new[] {new Point(470,875),new Point(530,908),new Point(565,922),new Point(718,1000),new Point(875,922),new Point(950,875)})
+                Check(source.GetPixel(point.X,point.Y).A>200&&source.GetPixel(point.X,point.Y).ToArgb()==edited.GetPixel(point.X,point.Y).ToArgb(),
+                    "Original jaw flanges, shading and bottom contour are preserved exactly");
+        }
+    }
     static void Seams(string root,KeyboardPetSprites sprites)
     {
         using(var source=new Bitmap(Path.Combine(root,"assets","keyboard-knight","rig","helmet-assembled-reference.png")))
@@ -133,22 +156,25 @@ internal static class TypingHelmetTests
             b.InterpolationMode=InterpolationMode.Bilinear;b.PixelOffsetMode=PixelOffsetMode.HighQuality;
             foreach(int index in LivingPetPortrait.HelmetDrawOrder)sprites.Rig.Parts[TypingHelmetAction.Parts[index]].Draw(b);
             int gaps=0,interior=0;
-            // The legacy closed reference still checks crown/temple seams;
-            // its former face and chin coverage is intentionally not rendered.
-            for(int y=1;y<88;y++)for(int x=1;x<299;x++)
+            // Check the crown, side guards and narrow jaw frame against the
+            // source; the intentional transparent face opening is excluded.
+            for(int y=1;y<174;y++)for(int x=1;x<299;x++)
             {
                 if(reference.GetPixel(x,y).A<249||reference.GetPixel(x-1,y).A<249||reference.GetPixel(x+1,y).A<249||
                     reference.GetPixel(x,y-1).A<249||reference.GetPixel(x,y+1).A<249)continue;
-                var point=new PointF(x,y);
-                if(sprites.Rig.Parts["helmet-face-left"].Hit(point)||sprites.Rig.Parts["helmet-face-right"].Hit(point)||sprites.Rig.Parts["helmet-chin"].Hit(point))continue;
                 interior++;if(assembled.GetPixel(x,y).A<220)gaps++;
             }
-            Check(interior>5000&&gaps==0,"Crown and temple armor retain their joined upper silhouette: "+gaps);
+            Check(interior>14000&&gaps==0,"All six parts retain the open helmet and jaw frame without seam holes: "+gaps);
         }
         foreach(var point in new[] {new PointF(119,129),new PointF(186,134),new PointF(152,151)})
         {
             bool covered=false;foreach(int index in LivingPetPortrait.HelmetDrawOrder)covered|=sprites.Rig.Parts[TypingHelmetAction.Parts[index]].Hit(point);
-            Check(!covered,"Visible armor leaves the original eyes and mouth uncovered");
+            Check(!covered,"The open helmet leaves both original eyes and mouth uncovered");
+        }
+        foreach(var point in new[] {new PointF(64,130),new PointF(100,150),new PointF(120,160),new PointF(148,170),new PointF(156,170),new PointF(183,160),new PointF(204,150),new PointF(239,130)})
+        {
+            bool covered=false;foreach(int index in LivingPetPortrait.HelmetDrawOrder)covered|=sprites.Rig.Parts[TypingHelmetAction.Parts[index]].Hit(point);
+            Check(covered,"The original armor outline still wraps both cheeks and the jawline");
         }
     }
     static int VisiblePixels(Bitmap image)
@@ -181,7 +207,7 @@ internal static class TypingHelmetTests
                 Check(Math.Abs(count-previous)<1800,"Armor coverage changes gradually rather than popping into or out of the rear layer");
                 previous=count;largest=Math.Max(largest,count);
             }
-            Check(!first&&largest>7000,"Progressive unfolding retains a substantial open helmet: "+largest);
+            Check(!first&&largest>14000,"Progressive unfolding reveals the crown and jaw frame: "+largest);
             // Hair above the registered crown must already be tucked away,
             // rather than remaining translucent over/through its top edge.
             using(var head=portrait.HeadMatrix())
@@ -243,13 +269,16 @@ internal static class TypingHelmetTests
                     Check(rear.GetPixel(px,py).A<48,"Rear hardware never protrudes through the scalp silhouette");
                 }
             }
-            // Check an interior facial area, not just the eye center pixels.
-            // This runs through deployment, locking and retraction, with head
-            // movement, both hairstyles and scaled scene rendering above.
-            for(int y=120;y<=153;y+=3)for(int x=112;x<=191;x+=3)
+            // The worn helmet keeps the face open, including both eyes and
+            // mouth, through head movement and armored music animation.
+            for(int y=126;y<=153;y+=3)for(int x=112;x<=191;x+=3)
             {
+                // The original wider jaw flanges border the lower cheeks;
+                // check both eyes and cheeks above them, and the mouth inside.
+                if(y>144&&(x<130||x>174))continue;
                 var p=Transform(head,new PointF(x,y));int alpha=front.GetPixel((int)Math.Round(p.X+28),(int)Math.Round(p.Y+28)).A;
-                Check(alpha==0,"Armor never overlays eyes, cheeks or mouth, including the settled helmet");
+                if(locked)Check(alpha<16,"Worn helmet leaves eyes, cheeks and mouth visible ("+x+","+y+", alpha="+alpha+")");
+                if(portrait.HelmetBlend==0)Check(alpha==0,"Retracted helmet restores the uncovered face");
             }
         }
     }
@@ -264,18 +293,18 @@ internal static class TypingHelmetTests
             for(int y=120;y<=153;y+=3)for(int x=112;x<=191;x+=3)
             {
                 var p=Transform(head,new PointF(x,y));
-                Check(image.GetPixel((int)Math.Round(p.X+28),(int)Math.Round(p.Y+28)).A==0,"Audio lights and meters stay outside the facial opening");
+                Check(image.GetPixel((int)Math.Round(p.X+28),(int)Math.Round(p.Y+28)).A==0,"Audio lights and meters stay on the outer temples, outside the visor center");
             }
         }
     }
     internal static void Run(string root)
     {
-        Motion();
+        Motion();OriginalJaw(root);
         using(var sprites=new KeyboardPetSprites(root))
         {
             Seams(root,sprites);
             Deployment(sprites);
-            for(int style=0;style<2;style++)
+            for(int style=0;style<3;style++)
             {
                 var input=new InputFeedbackState();
                 using(var scene=new BoundPetScene(sprites,new PetInputBindings(),input))
@@ -311,6 +340,6 @@ internal static class TypingHelmetTests
                 }
             }
         }
-        Console.WriteLine("PASS: open-face crown/temple armor, clear eyes/cheeks/mouth through deployment/retraction and audio lighting, tucked hair, rails, stop continuity, upper seams, 15/60 fps, both hairstyles and three sizes.");
+        Console.WriteLine("PASS: open-face helmet, visible eyes/cheeks/mouth, continuous jaw armor, full seams, progressive deployment/retraction, temple audio lighting, tucked hair, rails, stop continuity, 15/60 fps, all three hairstyles and three sizes.");
     }
 }

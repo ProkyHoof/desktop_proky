@@ -25,17 +25,19 @@ internal static class InteractionTests
         using(var b=Graphics.FromImage(active))
         using(var c=Graphics.FromImage(opposite))
         {
-            scene.SetViewWidth(BoundPetScene.CompactWidth);
-            scene.DrawMouse(a,1);
-            PointF mouse=scene.MousePosition;
-            Color wheel=idle.GetPixel((int)Math.Round(mouse.X-3),(int)Math.Round(mouse.Y+8));
-            Check(wheel.R>180&&wheel.G<90&&wheel.B<115,"Ruby wheel must face the viewer/fingertips, away from the wrist");
+            scene.SetViewWidth(BoundPetScene.CompactWidth);scene.SetMouseStyle(PetMouseStyles.KnightSword);
+            scene.DrawSword(a,1);
+            int bladePixels=0;
+            for(int y=384;y<idle.Height;y++)for(int x=0;x<idle.Width;x++)
+                if(idle.GetPixel(x,y).A>=64){bladePixels++;Check(scene.Hit(new PointF(x,y),false,true),"Exposed sword blade must remain draggable beyond the mat");}
+            Check(bladePixels>60,"Long silver sword blade must extend beyond the old mouse silhouette");
+            Check(!scene.Hit(new PointF(100,430),false,true),"Transparent space beside the blade lets clicks through");
             input.Button(1,true,1);input.Button(1,false,1.005);
-            scene.DrawMouse(b,1.08);
-            Check(DifferentPixels(idle,active)>40,"A sub-frame left click must visibly change the mouse shell");
+            scene.DrawSword(b,1.08);
+            Check(DifferentPixels(idle,active)>40,"A sub-frame left click must visibly light the sword edge");
             input.Clear();input.Button(2,true,1);input.Button(2,false,1.005);
-            scene.DrawMouse(c,1.08);
-            Check(DifferentPixels(idle,opposite)>40&&DifferentPixels(active,opposite)>60,"Left and right clicks must depress different shell plates");
+            scene.DrawSword(c,1.08);
+            Check(DifferentPixels(idle,opposite)>40&&DifferentPixels(active,opposite)>60,"Left and right clicks must light opposite sword edges");
             PointF restPalm=scene.Hands.LeftPalm;
             scene.Advance(1.08,.08,false);
             Check(scene.Hands.LeftPalm.X<restPalm.X-.5f&&scene.Hands.LeftPalm.Y>restPalm.Y+1,"Right click must lean toward the character's right button on screen-left");
@@ -48,7 +50,7 @@ internal static class InteractionTests
             int pixels=0;
             for(int y=0;y<active.Height;y++)for(int x=0;x<active.Width;x++)
                 if(active.GetPixel(x,y).A>0){pixels++;Check(x>=7&&x<BoundPetScene.CompactWidth-7,"Animated marks stay inside the compact window");}
-            Check(pixels>80,"Click ripples and scroll chevrons must remain visible outside the glove");
+            Check(pixels>80,"Sword slash trails must remain visible outside the glove");
             c.Clear(Color.Transparent);scene.DrawMouseFeedback(c,2.22);
             Check(DifferentPixels(active,opposite)>40,"Motion marks must move between animation frames");
             input.Button(1,false,2.1);input.Button(2,false,2.1);scene.Advance(2.1,.02,false);
@@ -57,15 +59,35 @@ internal static class InteractionTests
             c.Clear(Color.Transparent);Check(DifferentPixels(active,opposite)==0,"Expired feedback leaves no stale motion marks");
             foreach(bool horizontal in new[] {false,true})
             {
-                input.Wheel(120,horizontal,3);scene.DrawMouseFeedback(b,3.08);
-                input.Wheel(-120,horizontal,3);scene.DrawMouseFeedback(c,3.08);
-                Check(DifferentPixels(active,opposite)>20,"Opposite scroll directions must move chevrons in distinct directions");
+                input.Wheel(120,horizontal,3);scene.DrawSword(b,3.08);
+                input.Wheel(-120,horizontal,3);scene.DrawSword(c,3.08);
+                Check(DifferentPixels(active,opposite)>20,"Opposite scroll directions must move sword light in distinct directions");
                 b.Clear(Color.Transparent);c.Clear(Color.Transparent);
             }
             input.Clear();scene.DrawMouseFeedback(b,3.09);
             Check(DifferentPixels(active,opposite)==0,"Pausing clears mouse feedback immediately");
+            scene.SetMouseStyle(PetMouseStyles.Original);
+            a.Clear(Color.Transparent);scene.DrawMouse(a,4);
+            PointF mouse=scene.MousePosition;
+            Color ruby=idle.GetPixel((int)Math.Round(mouse.X-3),(int)Math.Round(mouse.Y+8));
+            Check(ruby.R>180&&ruby.G<90&&ruby.B<115,"Restored original mouse retains the ruby wheel at the fingertips");
+            Check(!scene.Hit(new PointF(51,400),false,true),"Original mouse does not leave a stale sword hit area");
+            foreach(int button in new[]{1,2,3,4,5})
+            {
+                input.Clear();input.Button(button,true,4);input.Button(button,false,4.005);
+                b.Clear(Color.Transparent);scene.DrawMouse(b,4.08);scene.DrawMouseFeedback(b,4.08);
+                Check(DifferentPixels(idle,active)>40,"Restored original mouse preserves each button's feedback");
+            }
+            foreach(bool horizontal in new[]{false,true})
+            {
+                input.Clear();input.Wheel(120,horizontal,5);
+                b.Clear(Color.Transparent);scene.DrawMouse(b,5.08);scene.DrawMouseFeedback(b,5.08);
+                input.Wheel(-120,horizontal,5);
+                c.Clear(Color.Transparent);scene.DrawMouse(c,5.08);scene.DrawMouseFeedback(c,5.08);
+                Check(DifferentPixels(active,opposite)>20,"Original mouse keeps directional wheel feedback");
+            }
         }
-        Console.WriteLine("PASS: short left/right press/rebound, directional wrist motion, animated ripple bounds, scroll chevrons and feedback expiry.");
+        Console.WriteLine("PASS: short left/right press/rebound, directional wrist motion, sword blade hit detection, slash bounds, directional sword light and feedback expiry.");
     }
     internal static void Run(string root)
     {

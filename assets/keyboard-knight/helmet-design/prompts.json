@@ -1,0 +1,26 @@
+{
+  "generator": "Built-in image_gen",
+  "use_case": "precise-object-edit / style-transfer",
+  "source": "silver-knight-source.png",
+  "runtime_directory": "../rig",
+  "originals": "original/",
+  "reference": "User-supplied T姿态无面骑士角色设定图.png; reference for plain silver medieval armor, not adult proportions.",
+  "prompt": "Use case: precise-object-edit / style-transfer. Asset type: production full front-view chibi knight helmet sprite on real transparent alpha. Image 1 is the edit target: the current broad helmet artwork. Image 2 is the DESIGN reference for its plain silver-white medieval helmet, black narrow V-shaped eye slit, central ridge, simple angular cheek plates and restrained facets. Image 3 is only the existing desktop pet's clean cute anime drawing style and new cloth outfit. Redesign image 1's helmet to closely match image 2's understated armor aesthetic, adapted to image 1's broad chibi head proportions and same total bounding width and height. IMPORTANT replace the ornamental sci-fi design: REMOVE the red forehead diamond/jewel, both horn/wing ornaments, circular ear turbines, decorative circuit lines and all red glowing eye strips. Create a simple slightly pointed silver-white domed crown with a central vertical ridge, a few large pale warm-gray faceted planes, smooth near-black outlines, modest black structural seams, small plain temple plates with no protruding spikes. A clean opaque black V-shaped narrow vision slit and a black short central nose seam lead to simple silver cheek and chin plates. The eye slit should meet at roughly 58% of the helmet height, matching image 1's brow/cheek division, so the top cap and two outer temple plates can still separate cleanly from the lower mask. Entire helmet is symmetrical, front orthographic, no perspective tilt. Metallic white/ivory, neutral gray and near-black ONLY: no red accents are required because the cloth outfit supplies the red scarf. Keep the broad compact chibi ratio, do not elongate into an adult helmet. Keep the whole helmet in image 1's framing and size; do not add a head, eyes, face, scarf, hair, torso, hands, sword or labels. No hyperrealistic rendering, no low-poly triangles all over, no heavy texture: use clean smooth anime cel shading that fits image 3, with only a few readable facets inspired by image 2. Genuine transparent background, no checkerboard pattern and no ground shadow. Deliver one full CLOSED helmet sprite; animation will separate its plates in the application.",
+  "registration": {
+    "canvas": [
+      900,
+      687
+    ],
+    "helmet_bounds": [
+      44,
+      1,
+      216,
+      172
+    ],
+    "pivot": [
+      152,
+      90
+    ],
+    "method": "tools/Prepare-Helmet.ps1; shared registered source cut into crown, temples, face plates and chin. The new crown mask retains the plain dark brow rim. Runtime renders all six plates, including both face plates and the chin, while preserving the existing deployment/retraction bindings."
+  }
+}
