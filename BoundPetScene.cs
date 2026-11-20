@@ -7,6 +7,7 @@ using System.Drawing.Text;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 internal static class PetDeskProjection
@@ -232,19 +233,20 @@ internal sealed class PetBindingEditor : KnightDialog
 internal sealed class WholeArmSprite : IDisposable
 {
     internal readonly Bitmap Image;
-    Bitmap tonedImage;
-    int tone;
-    internal void SetTone(int value)
+    readonly bool left;
+    Bitmap sleeveTexture;
+    int style, tone;
+    internal void SetClothing(int value, int palette)
     {
-        if(value==tone)return;
-        var replacement=value==0 ? null : PetSkinStyles.ApplyTone(Image,value);
-        if(tonedImage!=null)tonedImage.Dispose();tonedImage=replacement;tone=value;
+        if (style == value && tone == palette) return;
+        style = value; tone = palette;
+        if (sleeveTexture != null) { sleeveTexture.Dispose(); sleeveTexture = null; }
     }
     internal readonly PointF Shoulder, Fingertip;
     internal const float WorldWidth = 44;
     internal WholeArmSprite(Bitmap image,bool left)
     {
-        Image=image;
+        Image=image;this.left=left;
         Shoulder=new PointF(image.Width*.50f,image.Height*.08f);
         Fingertip=new PointF(image.Width*(left ? .46f : .54f),image.Height*.98f);
     }
@@ -311,9 +313,10 @@ internal sealed class WholeArmSprite : IDisposable
     internal void Draw(Graphics g,PointF shoulder,PointF fingertip)
     {
         PointF[] corners={Map(PointF.Empty,shoulder,fingertip),Map(new PointF(Image.Width,0),shoulder,fingertip),Map(new PointF(0,Image.Height),shoulder,fingertip)};
-        g.DrawImage(tonedImage??Image,corners,new RectangleF(0,0,Image.Width,Image.Height),GraphicsUnit.Pixel);
+        if (sleeveTexture == null) sleeveTexture = PetClothingStyles.CreateSleeve(Image, left, style, tone);
+        g.DrawImage(sleeveTexture,corners,new RectangleF(0,0,Image.Width,Image.Height),GraphicsUnit.Pixel);
     }
-    public void Dispose() {if(tonedImage!=null)tonedImage.Dispose();Image.Dispose();}
+    public void Dispose() {if(sleeveTexture!=null)sleeveTexture.Dispose();Image.Dispose();}
 }
 
 internal sealed class CoordinatedPetHands
@@ -445,42 +448,40 @@ internal sealed class BoundPetScene : IDisposable
     readonly Bitmap devices = new Bitmap(DeviceBounds.Width*DeviceScale,DeviceBounds.Height*DeviceScale,PixelFormat.Format32bppPArgb);
     static readonly RectangleF SwordBounds=new RectangleF(-21,-20,42,87);
     Bitmap swordTexture,mouseTexture;
-    Bitmap ornamentTexture,ornamentHitMask;
-    internal static readonly RectangleF DeskOrnamentBounds=new RectangleF(294,320,50,75);
-    internal int OrnamentStyle { get; private set; }
-    internal void SetOrnamentStyle(int value)
+    PetApparitions.Texture apparitionTexture;
+    double apparitionSince;
+    readonly bool previewApparition;
+    internal int ApparitionStyle { get; private set; }
+    internal void SetApparitionStyle(int value, double since)
     {
-        value=PetDeskOrnaments.Normalize(value);if(value==OrnamentStyle)return;
-        var replacement=PetDeskOrnaments.Create(value);
-        Bitmap mask=null;
-        try
-        {
-            if(replacement!=null)
-            {
-                mask=new Bitmap((int)DeskOrnamentBounds.Width,(int)DeskOrnamentBounds.Height,PixelFormat.Format32bppPArgb);
-                using(var g=Graphics.FromImage(mask))
-                {g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.DrawImage(replacement,new RectangleF(0,0,mask.Width,mask.Height),new RectangleF(0,0,replacement.Width,replacement.Height),GraphicsUnit.Pixel);}
-            }
-        }
-        catch{if(replacement!=null)replacement.Dispose();if(mask!=null)mask.Dispose();throw;}
-        if(ornamentTexture!=null)ornamentTexture.Dispose();if(ornamentHitMask!=null)ornamentHitMask.Dispose();
-        ornamentTexture=replacement;ornamentHitMask=mask;OrnamentStyle=value;
+        value = PetApparitions.Normalize(value);
+        if (value == ApparitionStyle) return;
+        RefreshApparition(value);
+        ApparitionStyle = value;
+        apparitionSince = since;
     }
-    internal void DrawOrnament(Graphics g)
+    void RefreshApparition(int style)
     {
-        if(ornamentTexture==null)return;var saved=g.Save();
-        try{g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.DrawImage(ornamentTexture,DeskOrnamentBounds,new RectangleF(0,0,ornamentTexture.Width,ornamentTexture.Height),GraphicsUnit.Pixel);}
-        finally{g.Restore(saved);}
+        var replacement = PetApparitions.Create(sprites.ApparitionDirectory, style, Tone);
+        if (apparitionTexture != null) apparitionTexture.Dispose();
+        apparitionTexture = replacement;
     }
-    bool HitOrnament(PointF p)
+    internal void DrawApparition(Graphics g, double now)
     {
-        var r=DeskOrnamentBounds;if(ornamentHitMask==null||!r.Contains(p))return false;
-        return ornamentHitMask.GetPixel((int)(p.X-r.X),(int)(p.Y-r.Y)).A>=32;
+        if (apparitionTexture == null) return;
+        apparitionTexture.Draw(g, PetApparitions.PhaseAt(now - apparitionSince, previewApparition));
     }
     internal int MouseStyle { get; private set; }
     internal int PadStyle { get; private set; }
     internal int KeyboardStyle { get; private set; }
     internal int Tone { get; private set; }
+    internal int ClothingStyle { get { return portrait.ClothingStyle; } }
+    internal void SetClothingStyle(int value)
+    {
+        value = PetClothingStyles.Normalize(value);
+        portrait.SetClothingStyle(value);
+        foreach (var arm in sprites.Arms) arm.SetClothing(value, Tone);
+    }
     Color KeyboardColor(Color color){return PetSkinStyles.ToneColor(Tone,color);}
     Color MouseColor(Color color){return MouseStyle==PetMouseStyles.Cyberpunk&&color.R>color.G+24 ? PetSkinStyles.CyberPrimary(Tone,color.A) : PetSkinStyles.ToneColor(Tone,color);}
     Color MouseButtonColor(Color color,int button)
@@ -491,7 +492,8 @@ internal sealed class BoundPetScene : IDisposable
         var replacement=CreateSwordTexture(value);
         swordTexture.Dispose();swordTexture=replacement;
         mouseTexture.Dispose();mouseTexture=CreateMouseTexture(value,MouseStyle==PetMouseStyles.Cyberpunk);Tone=value;
-        portrait.SetTone(value);foreach(var arm in sprites.Arms)arm.SetTone(value);RenderDevices();
+        portrait.SetTone(value);foreach(var arm in sprites.Arms)arm.SetClothing(ClothingStyle,value);RenderDevices();
+        RefreshApparition(ApparitionStyle);
     }
     internal void SetKeyboardStyle(int keyboard)
     {
@@ -550,10 +552,10 @@ internal sealed class BoundPetScene : IDisposable
     }
     internal CoordinatedPetHands Hands { get { return hands; } }
     internal PointF MousePosition { get { return hands.Mouse; } }
-    internal BoundPetScene(KeyboardPetSprites sprites, PetInputBindings bindings, InputFeedbackState input)
+    internal BoundPetScene(KeyboardPetSprites sprites, PetInputBindings bindings, InputFeedbackState input, bool previewApparition=false)
     {
         ViewWidth=WorldWidth;
-        this.sprites = sprites; this.bindings = bindings; this.input = input;
+        this.sprites = sprites; this.bindings = bindings; this.input = input; this.previewApparition = previewApparition;
         hands=new CoordinatedPetHands(bindings,input);
         portrait=new LivingPetPortrait(sprites);
         swordTexture=CreateSwordTexture(0);mouseTexture=CreateMouseTexture(0);RenderDevices();
@@ -584,8 +586,8 @@ internal sealed class BoundPetScene : IDisposable
     void DrawCyberPad(Graphics g)
     {
         using(var pad=PetDeskProjection.Polygon(PetDeskProjection.MousePad))
-        using(var surface=new LinearGradientBrush(new RectangleF(8,326,139,60),Color.FromArgb(28,39,65),Color.FromArgb(15,20,35),25f))
-        using(var edge=new Pen(Color.FromArgb(11,16,29),2.5f))
+        using(var surface=new LinearGradientBrush(new RectangleF(8,326,139,60),PetSkinStyles.CyberSurface(Tone,Color.FromArgb(28,39,65)),PetSkinStyles.CyberSurface(Tone,Color.FromArgb(15,20,35)),25f))
+        using(var edge=new Pen(PetSkinStyles.CyberSurface(Tone,Color.FromArgb(11,16,29)),2.5f))
         {
             g.FillPath(surface,pad);g.DrawPath(edge,pad);
             var saved=g.Save();g.SetClip(pad,CombineMode.Intersect);
@@ -609,7 +611,7 @@ internal sealed class BoundPetScene : IDisposable
             }
             CyberpunkArt.Trace(g,PetSkinStyles.CyberSecondary(Tone),1.4f,ChartPoint(.04f,.24f),ChartPoint(.04f,.06f),ChartPoint(.32f,.06f));
             CyberpunkArt.Trace(g,PetSkinStyles.CyberPrimary(Tone),1.4f,ChartPoint(.69f,.94f),ChartPoint(.96f,.94f),ChartPoint(.96f,.71f));
-            using(var caution=new Pen(Color.FromArgb(231,206,112),1))
+            using(var caution=new Pen(PetSkinStyles.CyberSurface(Tone,Color.FromArgb(231,206,112)),1))
                 for(int i=0;i<4;i++)g.DrawLine(caution,ChartPoint(.08f+i*.025f,.91f),ChartPoint(.1f+i*.025f,.84f));
             g.Restore(saved);
             using(var rim=new Pen(PetSkinStyles.CyberPrimary(Tone,145),.9f))g.DrawPath(rim,pad);
@@ -621,9 +623,9 @@ internal sealed class BoundPetScene : IDisposable
         // key coordinates remain on the hand contact plane.
         var corners=PetDeskProjection.Keyboard;
         using(var wall=SoftPolygon(corners.Select(p=>new PointF(p.X,p.Y+8)).ToArray(),1))
-        using(var metal=new SolidBrush(Color.FromArgb(13,21,34)))g.FillPath(metal,wall);
+        using(var metal=new SolidBrush(PetSkinStyles.CyberSurface(Tone,Color.FromArgb(13,21,34))))g.FillPath(metal,wall);
         using(var deck=SoftPolygon(corners.Select(p=>new PointF(p.X,p.Y+5)).ToArray(),1))
-        using(var surface=new LinearGradientBrush(new RectangleF(103,341,188,55),Color.FromArgb(35,54,74),Color.FromArgb(16,26,43),90f))
+        using(var surface=new LinearGradientBrush(new RectangleF(103,341,188,55),PetSkinStyles.CyberSurface(Tone,Color.FromArgb(35,54,74)),PetSkinStyles.CyberSurface(Tone,Color.FromArgb(16,26,43)),90f))
         using(var rim=new Pen(PetSkinStyles.CyberPrimary(Tone,190),.8f))
         {g.FillPath(surface,deck);g.DrawPath(rim,deck);}
         var saved=g.Save();g.TranslateTransform(0,5);
@@ -641,7 +643,7 @@ internal sealed class BoundPetScene : IDisposable
         {
             g.ScaleTransform(3,3);g.TranslateTransform(8,6);g.SmoothingMode=SmoothingMode.AntiAlias;
             using(var body=CyberpunkArt.Panel(new RectangleF(-6,-4,12,8),2))
-            using(var metal=new SolidBrush(Color.FromArgb(245,19,31,46)))
+            using(var metal=new SolidBrush(PetSkinStyles.CyberSurface(tone,Color.FromArgb(245,19,31,46))))
             using(var rim=new Pen(PetSkinStyles.CyberPrimary(tone,210),.65f))
             {g.FillPath(metal,body);g.DrawPath(rim,body);}
             using(var lens=new SolidBrush(PetSkinStyles.CyberPrimary(tone,235)))g.FillEllipse(lens,-2,-2,4,4);
@@ -691,7 +693,7 @@ internal sealed class BoundPetScene : IDisposable
                 g.FillPath(light,beam);g.DrawPath(edge,beam);
             }
             using(var panel=new GraphicsPath())
-            using(var tint=new LinearGradientBrush(r,Color.FromArgb(100,17,54,76),Color.FromArgb(65,34,26,67),90f))
+            using(var tint=new LinearGradientBrush(r,PetSkinStyles.CyberSurface(Tone,Color.FromArgb(100,17,54,76)),PetSkinStyles.CyberSurface(Tone,Color.FromArgb(65,34,26,67)),90f))
             {
                 panel.AddEllipse(r);
                 g.FillPath(tint,panel);CyberpunkArt.Glow(g,panel,PetSkinStyles.CyberPrimary(Tone,190),.8f);
@@ -1371,7 +1373,6 @@ internal sealed class BoundPetScene : IDisposable
         {
             PetKeyCap cap = PetKeyboardLayout.Find(target); if (cap != null) DrawCap(g, cap, true, 1);
         }
-        DrawOrnament(g);
     }
     void DrawMusicBackdrop(Graphics g,double now)
     {
@@ -1395,10 +1396,10 @@ internal sealed class BoundPetScene : IDisposable
             var bounds=new RectangleF(22+bar*13.5f,baseline-height*.5f,8.5f,height);
             int alpha=(int)(blend*(48+energy*64));
             using(var shape=Rounded(bounds,4.25f))
-            using(var fill=new LinearGradientBrush(bounds,KeyboardColor(Color.FromArgb(alpha,188,71,104)),PetSkinStyles.Tint(Tone,Color.FromArgb(alpha/3,126,102,167)),90f))
+            using(var fill=new LinearGradientBrush(bounds,KeyboardColor(Color.FromArgb(alpha,188,71,104)),PetSkinStyles.MusicColor(Tone,Color.FromArgb(alpha/3,126,102,167)),90f))
             using(var tip=new Pen(KeyboardColor(Color.FromArgb((int)(alpha*.8f),204,111,140)),1.8f))
             {
-                Color end=PetSkinStyles.Tint(Tone,Color.FromArgb(alpha/2,126,102,167));
+                Color end=PetSkinStyles.MusicColor(Tone,Color.FromArgb(alpha/2,126,102,167));
                 fill.InterpolationColors=new ColorBlend
                 {
                     Positions=new[] {0f,.5f,1f},
@@ -1434,10 +1435,10 @@ internal sealed class BoundPetScene : IDisposable
                 int index=(row+column*7)%HackerCodeLines.Length;
                 bool prompt=HackerCodeLines[index].StartsWith("root"),comment=HackerCodeLines[index].StartsWith("//");
                 int alpha=(int)(blend*fade*(prompt ? 215+energy*35 : 175+energy*65));
-                Color color=prompt ? PetSkinStyles.CyberSecondary(Tone,alpha) : comment ? Color.FromArgb(alpha,102,231,165) : PetSkinStyles.CyberPrimary(Tone,alpha);
+                Color color=prompt ? PetSkinStyles.CyberSecondary(Tone,alpha) : comment ? PetSkinStyles.MusicColor(Tone,Color.FromArgb(alpha,102,231,165)) : PetSkinStyles.CyberPrimary(Tone,alpha);
                 float x=area.Left+column*columnWidth+2;
                 // A dark offset keeps the neon letters legible on pale desktops.
-                using(var shadow=new SolidBrush(Color.FromArgb((int)(blend*fade*(150+energy*40)),8,29,46)))
+                using(var shadow=new SolidBrush(PetSkinStyles.CyberSurface(Tone,Color.FromArgb((int)(blend*fade*(150+energy*40)),8,29,46))))
                 using(var ink=new SolidBrush(color))
                 {
                     g.DrawString(HackerCodeLines[index],codeFont,shadow,new PointF(x+.8f,y+1),format);
@@ -1481,7 +1482,7 @@ internal sealed class BoundPetScene : IDisposable
                 // path gradients produce inside a strongly curved water band.
                 using(var depth=new LinearGradientBrush(water.GetBounds(),Color.Transparent,Color.Transparent,90f))
                 {
-                    Color sea=Color.FromArgb(alpha,40,167+layer*7,199+layer*6);
+                    Color sea=PetSkinStyles.MusicColor(Tone,Color.FromArgb(alpha,40,167+layer*7,199+layer*6));
                     depth.InterpolationColors=new ColorBlend
                     {
                         Positions=new[]{0f,.25f,.6f,1f},
@@ -1491,14 +1492,14 @@ internal sealed class BoundPetScene : IDisposable
                 }
                 using(var light=new LinearGradientBrush(new RectangleF(14,0,ViewWidth-28,1),Color.Transparent,Color.Transparent,0f))
                 {
-                    Color shadow=Color.FromArgb((int)(blend*(90+energy*35)),17,100,135);
+                    Color shadow=PetSkinStyles.MusicColor(Tone,Color.FromArgb((int)(blend*(90+energy*35)),17,100,135));
                     light.InterpolationColors=new ColorBlend {Positions=new[]{0f,.12f,.88f,1f},Colors=new[]{Color.FromArgb(0,shadow),shadow,shadow,Color.FromArgb(0,shadow)}};
                     using(var edge=new Pen(light,4.5f))
                     {edge.StartCap=edge.EndCap=LineCap.Round;edge.LineJoin=LineJoin.Round;g.DrawPath(edge,crest);}
                     foreach(float width in new[]{15f,8f,3.5f,1.8f})
                     {
                         float strength=width>10 ? .1f : width>5 ? .2f : width>2 ? .55f : 1f;
-                        Color sea=Color.FromArgb((int)(crestAlpha*strength),width>2 ? 45 : 153,211,231);
+                        Color sea=PetSkinStyles.MusicColor(Tone,Color.FromArgb((int)(crestAlpha*strength),width>2 ? 45 : 153,211,231));
                         light.InterpolationColors=new ColorBlend {Positions=new[]{0f,.12f,.88f,1f},Colors=new[]{Color.FromArgb(0,sea),sea,sea,Color.FromArgb(0,sea)}};
                         using(var edge=new Pen(light,width))
                         {edge.StartCap=edge.EndCap=LineCap.Round;edge.LineJoin=LineJoin.Round;g.DrawPath(edge,crest);}
@@ -1513,18 +1514,18 @@ internal sealed class BoundPetScene : IDisposable
                     float foam=(float)Math.Max(0,-Math.Sin(phase)-.1);
                     if(foam<.08f)continue;
                     int opacity=(int)(alpha*1.65f*foam*envelope);
-                    using(var pen=new Pen(Color.FromArgb(opacity,229,251,252),1.2f+foam*.8f))
+                    using(var pen=new Pen(PetSkinStyles.MusicColor(Tone,Color.FromArgb(opacity,229,251,252)),1.2f+foam*.8f))
                     {
                         pen.StartCap=pen.EndCap=LineCap.Round;
                         g.DrawCurve(pen,new[]{points[i],points[i+1],points[i+2],points[i+3]},.5f);
                     }
-                    using(var sparkle=new SolidBrush(Color.FromArgb((int)(opacity*.65f),242,255,255)))
+                    using(var sparkle=new SolidBrush(PetSkinStyles.MusicColor(Tone,Color.FromArgb((int)(opacity*.65f),242,255,255))))
                         g.FillEllipse(sparkle,points[i+2].X+1,points[i+2].Y-3-foam*2,1.1f+foam,1.1f);
                 }
                 // Faint refracted traces give the body of each swell depth.
                 var reflection=new PointF[points.Length];
                 for(int i=0;i<points.Length;i++)reflection[i]=new PointF(points[i].X,points[i].Y+8+(float)Math.Sin(i*.15+layer)*2);
-                using(var shimmer=new Pen(Color.FromArgb((int)(alpha*.42f),75,187,219),1.1f))
+                using(var shimmer=new Pen(PetSkinStyles.MusicColor(Tone,Color.FromArgb((int)(alpha*.42f),75,187,219)),1.1f))
                 {shimmer.StartCap=shimmer.EndCap=LineCap.Round;g.DrawCurve(shimmer,reflection,.48f);}
             }
         }
@@ -1533,6 +1534,7 @@ internal sealed class BoundPetScene : IDisposable
     internal void Draw(Graphics g, double now, bool resting, bool follow)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        DrawApparition(g,now);
         DrawMusicBackdrop(g,now);
         portrait.DrawBehindDesk(g);
         portrait.Draw(g,false);
@@ -1570,7 +1572,6 @@ internal sealed class BoundPetScene : IDisposable
             ? input.LiveChord.Length > 0 && LiveBubble.Contains(p)
             : input.KeyDisplay(renderTime).Length > 0 && CurrentKeyFrame.Contains(p))) return true;
         if(MouseStyle==PetMouseStyles.KnightSword&&HitSword(p))return true;
-        if(HitOrnament(p))return true;
         using (var pad = PetDeskProjection.Polygon(PetDeskProjection.MousePad)) if (pad.IsVisible(p)) return true;
         using (var keyboard = PetDeskProjection.Polygon(PetDeskProjection.Keyboard)) if (keyboard.IsVisible(p)) return true;
         if(portrait.Hit(new PointF((p.X-CharacterBounds.X)*300/CharacterBounds.Width,(p.Y-CharacterBounds.Y)*229/CharacterBounds.Height)))return true;
@@ -1596,130 +1597,227 @@ internal sealed class BoundPetScene : IDisposable
         {portrait.React(now);return true;}
         return false;
     }
-    public void Dispose() { portrait.Dispose(); devices.Dispose(); swordTexture.Dispose(); mouseTexture.Dispose(); if(ornamentTexture!=null)ornamentTexture.Dispose(); if(ornamentHitMask!=null)ornamentHitMask.Dispose(); keyFont.Dispose(); inputFont.Dispose(); floatingFont.Dispose(); codeFont.Dispose(); }
+    public void Dispose() { portrait.Dispose(); devices.Dispose(); swordTexture.Dispose(); mouseTexture.Dispose(); if(apparitionTexture!=null)apparitionTexture.Dispose(); keyFont.Dispose(); inputFont.Dispose(); floatingFont.Dispose(); codeFont.Dispose(); }
 }
 
-internal static class PetDeskOrnaments
+internal static class PetApparitions
 {
-    internal const int None=0,Knight=1,PirateShip=2,Gundam=3;
-    internal static int Normalize(int value){return value>=None&&value<=Gundam ? value : None;}
-    static readonly Color Ink=Color.FromArgb(33,36,47),White=Color.FromArgb(240,244,247),Silver=Color.FromArgb(171,185,201),
-        Dark=Color.FromArgb(48,58,75),Red=Color.FromArgb(204,48,64),Gold=Color.FromArgb(244,195,77),Blue=Color.FromArgb(40,104,183);
-    static void Part(Graphics g,Color color,params float[] xy)
+    internal const int None = 0, Knight = 1, Pirate = 2, Gundam = 3;
+    internal static readonly RectangleF Bounds = new RectangleF(12, 51, 328, 256);
+    internal const double PreviewDelay = .25;
+    const double VisibleFor = 8, HiddenFor = 8, Interval = VisibleFor + HiddenFor;
+    const double RevealFor = 1.1, DissolveFor = 1.25;
+    const float PeakOpacity = .72f;
+    const int CellSize = 2, PosterInset = 4, RevealEdgeHeight = 24;
+    static readonly string[] Posters = { "knight.png", "pirate.png", "gundam.png" };
+    static readonly PointF[] Corners = {
+        Bounds.Location, new PointF(Bounds.Right, Bounds.Top), new PointF(Bounds.Left, Bounds.Bottom)
+    };
+
+    internal static string DirectoryAt(string root) { return Path.Combine(root, "assets", "keyboard-knight", "apparitions"); }
+    internal static int Normalize(int value) { return value >= None && value <= Gundam ? value : None; }
+
+    internal static void CheckPosters(string root)
     {
-        var points=new PointF[xy.Length/2];for(int i=0;i<points.Length;i++)points[i]=new PointF(xy[i*2],xy[i*2+1]);
-        using(var fill=new SolidBrush(color))using(var edge=new Pen(Ink,1.15f)){edge.LineJoin=LineJoin.Round;g.FillPolygon(fill,points);g.DrawPolygon(edge,points);}
-    }
-    static void Oval(Graphics g,Color color,float x,float y,float w,float h)
-    {using(var fill=new SolidBrush(color))using(var edge=new Pen(Ink,.9f)){g.FillEllipse(fill,x,y,w,h);g.DrawEllipse(edge,x,y,w,h);}}
-    static void Line(Graphics g,Color color,float width,params float[] xy)
-    {
-        var points=new PointF[xy.Length/2];for(int i=0;i<points.Length;i++)points[i]=new PointF(xy[i*2],xy[i*2+1]);
-        using(var pen=new Pen(color,width)){pen.StartCap=pen.EndCap=LineCap.Round;pen.LineJoin=LineJoin.Round;g.DrawLines(pen,points);}
-    }
-    internal static Bitmap Create(int style)
-    {
-        style=Normalize(style);if(style==None)return null;
-        var image=new Bitmap(192,288,PixelFormat.Format32bppPArgb);
-        try
+        foreach (string name in Posters)
+        using (var image = new Bitmap(Path.Combine(DirectoryAt(root), name)))
         {
-            using(var g=Graphics.FromImage(image))
+            if (image.Width < 1280 || image.Height < 1000 ||
+                image.GetPixel(0, 0).A != 0 || image.GetPixel(image.Width - 1, 0).A != 0)
+                throw new InvalidDataException("背后虚影需要带透明边缘的高清海报：" + name);
+        }
+    }
+
+    internal static double PhaseAt(double elapsed, bool preview)
+    {
+        double sinceFirst = elapsed - (preview ? PreviewDelay : HiddenFor);
+        return sinceFirst < 0 ? -1 : sinceFirst % Interval;
+    }
+
+    internal static Texture Create(string directory, int style, int tone)
+    {
+        if (style == None) return null;
+        using (var source = new Bitmap(Path.Combine(directory, Posters[style - 1])))
+        {
+            // Average the film artwork into a fixed grid. Each sample becomes
+            // one square pixel when the texture is drawn behind the pet.
+            var texture = new Bitmap((int)Bounds.Width / CellSize, (int)Bounds.Height / CellSize, PixelFormat.Format32bppPArgb);
+            try
             {
-                g.ScaleTransform(3,3);g.SmoothingMode=SmoothingMode.AntiAlias;
-                Oval(g,style==Gundam ? Dark : Silver,4,86,56,8);
-                Line(g,style==Gundam ? Color.FromArgb(53,237,244) : White,1,9,89,54,89);
-                if(style==Knight)DrawKnight(g);else if(style==PirateShip)DrawShip(g);else DrawGundam(g);
+                int inset = PosterInset / CellSize;
+                float scale = Math.Min((texture.Width - 2f * inset) / source.Width, (texture.Height - 2f * inset) / source.Height);
+                int width = (int)Math.Round(source.Width * scale), height = (int)Math.Round(source.Height * scale);
+                var placement = new Rectangle((texture.Width - width) / 2, inset, width, height);
+                using (var g = Graphics.FromImage(texture))
+                using (var colors = new ImageAttributes())
+                {
+                    g.CompositingMode = CompositingMode.SourceCopy;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    colors.SetWrapMode(WrapMode.TileFlipXY);
+                    colors.SetColorMatrix(PosterColors(style, tone));
+                    // Lift shadows and midtones before the translucent desktop blend.
+                    colors.SetGamma(.57f);
+                    g.DrawImage(source, placement, 0, 0, source.Width, source.Height, GraphicsUnit.Pixel, colors);
+                }
+                return new Texture(texture, style);
             }
-            return image;
+            catch { texture.Dispose(); throw; }
         }
-        catch{image.Dispose();throw;}
     }
-    static void DrawKnight(Graphics g)
+
+    internal sealed class Texture : IDisposable
     {
-        // The original knight's closed silver helmet, scarf, shield and sword.
-        Part(g,Red,20,39,43,40,48,78,33,75,16,80);
-        Part(g,Dark,23,64,42,64,42,80,23,80);
-        Part(g,Silver,23,65,31,65,30,83,21,83);
-        Part(g,White,34,65,42,65,44,83,34,83);
-        Part(g,Dark,20,82,31,82,32,87,18,87);
-        Part(g,Dark,34,82,44,82,47,87,33,87);
-        Part(g,Silver,21,41,43,41,44,60,39,68,24,67,19,57);
-        Part(g,White,23,42,32,41,32,63,23,60);
-        Line(g,Dark,1,32,43,32,62);Line(g,Silver,1,23,49,30,52);
-        Part(g,White,16,41,23,43,21,51,13,50);
-        Part(g,Silver,42,43,49,42,52,51,44,53);
-        Part(g,Dark,14,49,21,51,19,64,12,62);
-        Part(g,Dark,45,51,51,50,54,64,47,66);
-        Part(g,White,51,39,54,34,57,39,56,69,51,69);
-        Line(g,Silver,.7f,54,39,54,67);Line(g,Gold,2,48,69,59,69);Line(g,Dark,3,54,72,54,80);
-        Part(g,Silver,18,19,25,13,39,13,46,21,44,36,37,42,25,40,18,33);
-        Part(g,White,20,20,29,15,32,19,31,38,24,36,20,31);
-        Part(g,Color.FromArgb(111,129,153),34,19,41,18,44,23,42,35,35,39);
-        Part(g,Dark,21,25,43,25,42,29,22,29);
-        Line(g,Gold,.8f,24,27,29,27,32,28,37,27,40,27);
-        Line(g,Silver,1,32,19,32,37);Line(g,Dark,.7f,36,32,39,33,36,35);
-        Part(g,Red,27,14,27,8,34,4,42,6,36,10,33,15);
-        Part(g,Red,23,38,34,41,43,37,43,43,32,47,22,43);
-        Part(g,Red,38,43,47,44,45,52,40,49);
-        Part(g,White,6,54,23,51,24,69,16,78,7,70);
-        Part(g,Red,9,57,20,55,21,68,16,74,10,68);
-        Line(g,Gold,1.3f,15,58,16,70);Line(g,Gold,1.3f,12,62,20,61);
-    }
-    static void DrawShip(Graphics g)
-    {
-        Oval(g,Color.FromArgb(78,145,166),7,80,51,9);
-        Part(g,Color.FromArgb(100,59,40),4,66,16,69,49,68,61,63,53,79,40,85,17,83,9,77);
-        Part(g,Color.FromArgb(174,111,62),9,69,51,69,56,67,49,77,38,81,18,79);
-        Line(g,Gold,1.3f,7,67,18,71,48,70,59,65);
-        Line(g,Color.FromArgb(82,48,37),1,14,75,47,75);
-        for(int i=0;i<4;i++)Oval(g,Gold,17+i*8,73,3,3);
-        Line(g,Ink,2.6f,31,17,31,69);Line(g,Color.FromArgb(173,111,66),1.2f,31,18,31,68);
-        Line(g,Ink,1.6f,12,28,49,28);Line(g,Ink,1.5f,16,57,47,57);
-        using(var sail=new GraphicsPath())
+        const int ParticleSpacing = 24;
+        const double ParticleOpacity = .8, ParticleEdgeFade = .15;
+        readonly Bitmap image;
+        readonly Rectangle area;
+        readonly int[] posterPixels, framePixels, order;
+        readonly Particle[] particles;
+        readonly ImageAttributes opacity = new ImageAttributes();
+        int drawnCount = -1;
+
+        struct Particle
         {
-            sail.AddBezier(14,29,19,34,16,48,12,55);sail.AddBezier(12,55,25,59,40,59,49,54);
-            sail.AddBezier(49,54,44,46,45,35,49,29);sail.CloseFigure();
-            using(var fill=new SolidBrush(Color.FromArgb(244,225,182)))using(var edge=new Pen(Ink,1.2f)){g.FillPath(fill,sail);g.DrawPath(edge,sail);}
+            internal int X, Y, DriftX, DriftY, Size, Pixel;
+            internal double Position, Lifetime;
         }
-        Line(g,Color.FromArgb(198,172,130),.65f,20,32,21,52);Line(g,Color.FromArgb(198,172,130),.65f,42,32,41,52);
-        Oval(g,Ink,26,37,12,10);Oval(g,White,28,39,3,3);Oval(g,White,33,39,3,3);
-        Line(g,Ink,2,29,47,34,47);Line(g,Ink,1.2f,25,49,38,53);Line(g,Ink,1.2f,25,53,38,49);
-        Part(g,Red,47,42,58,59,47,58);
-        Part(g,Ink,32,16,32,7,48,10,42,14,48,18);
-        Line(g,White,.8f,35,11,40,14);Line(g,White,.8f,35,14,40,11);
-        Line(g,Color.FromArgb(178,145,99),.8f,30,20,8,66);Line(g,Color.FromArgb(178,145,99),.8f,33,20,57,64);
-        Part(g,Color.FromArgb(122,74,46),42,61,50,61,50,68,42,68);
-        Line(g,White,.7f,13,84,22,85,27,83);Line(g,White,.7f,41,86,49,84,55,85);
+
+        internal Texture(Bitmap image, int style)
+        {
+            this.image = image;
+            area = new Rectangle(Point.Empty, image.Size);
+            posterPixels = new int[area.Width * area.Height];
+            var data = image.LockBits(area, ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
+            try { Marshal.Copy(data.Scan0, posterPixels, 0, posterPixels.Length); }
+            finally { image.UnlockBits(data); }
+
+            framePixels = new int[posterPixels.Length];
+            opacity.SetColorMatrix(new ColorMatrix { Matrix33 = PeakOpacity });
+            // Reveal lower rows first and stagger neighboring cells at the rising edge.
+            var random = new Random(style);
+            order = Enumerable.Range(0, posterPixels.Length)
+                .Where(i => (posterPixels[i] >> 24) != 0)
+                .OrderByDescending(i => i / area.Width + random.NextDouble() * (RevealEdgeHeight / CellSize))
+                .ToArray();
+            particles = CreateParticles(random);
+        }
+
+        Particle[] CreateParticles(Random random)
+        {
+            var result = new List<Particle>();
+            for (int first = 0; first < order.Length; first += ParticleSpacing)
+            {
+                int rank = first + random.Next(Math.Min(ParticleSpacing, order.Length - first));
+                int source = order[rank], pixel = posterPixels[source];
+                if ((uint)pixel >> 24 < 144) continue;
+                result.Add(new Particle
+                {
+                    X = source % area.Width, Y = source / area.Width,
+                    DriftX = random.Next(6, 21) * (random.Next(2) == 0 ? -1 : 1),
+                    DriftY = -random.Next(5, 18),
+                    Size = random.Next(5) == 0 ? 2 : 1,
+                    Pixel = pixel,
+                    Position = (rank + 1d) / order.Length,
+                    Lifetime = .25 + random.NextDouble() * .23
+                });
+            }
+            return result.ToArray();
+        }
+
+        internal void Draw(Graphics g, double phase)
+        {
+            if (phase <= 0 || phase >= VisibleFor) return;
+            double portion = Math.Min(1, Math.Min(phase / RevealFor, (VisibleFor - phase) / DissolveFor));
+            UpdateFrame((int)(order.Length * portion), phase);
+            var saved = g.Save();
+            try
+            {
+                g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.DrawImage(image, Corners, area, GraphicsUnit.Pixel, opacity);
+            }
+            finally { g.Restore(saved); }
+        }
+
+        void UpdateFrame(int count, double phase)
+        {
+            bool gathering = phase < RevealFor, scattering = phase > VisibleFor - DissolveFor;
+            bool moving = gathering || scattering;
+            if (!moving && count == drawnCount) return;
+
+            Array.Clear(framePixels, 0, framePixels.Length);
+            for (int i = 0; i < count; i++)
+            {
+                int cell = order[i];
+                framePixels[cell] = posterPixels[cell];
+            }
+            if (moving) DrawParticles(phase, scattering);
+
+            var data = image.LockBits(area, ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            try { Marshal.Copy(framePixels, 0, data.Scan0, framePixels.Length); }
+            finally { image.UnlockBits(data); }
+            drawnCount = moving ? -1 : count;
+        }
+
+        void DrawParticles(double phase, bool scattering)
+        {
+            double edgeFade = Math.Min(1, (scattering ? VisibleFor - phase : phase) / ParticleEdgeFade);
+            foreach (var particle in particles)
+            {
+                // Tie every particle to its cell's reveal or removal time so the
+                // same phase looks identical in a preview and on the desktop.
+                double age = scattering ? phase - (VisibleFor - particle.Position * DissolveFor)
+                    : particle.Position * RevealFor - phase;
+                if (age < 0 || age >= particle.Lifetime) continue;
+                double travel = age / particle.Lifetime;
+                int x = particle.X + (int)Math.Round(particle.DriftX * travel);
+                int y = particle.Y + (int)Math.Round(particle.DriftY * travel);
+                int pixel = DimPixel(particle.Pixel, (1 - travel) * ParticleOpacity * edgeFade);
+                if (pixel == 0) continue;
+                for (int row = Math.Max(0, y); row < Math.Min(area.Height, y + particle.Size); row++)
+                for (int column = Math.Max(0, x); column < Math.Min(area.Width, x + particle.Size); column++)
+                {
+                    int cell = row * area.Width + column;
+                    if (framePixels[cell] == 0) framePixels[cell] = pixel;
+                }
+            }
+        }
+
+        static int DimPixel(int pixel, double strength)
+        {
+            // Scale each premultiplied channel along with alpha to keep the hue.
+            int alpha = (int)(((uint)pixel >> 24) * strength);
+            int red = (int)(((pixel >> 16) & 255) * strength);
+            int green = (int)(((pixel >> 8) & 255) * strength);
+            int blue = (int)((pixel & 255) * strength);
+            return (alpha << 24) | (red << 16) | (green << 8) | blue;
+        }
+
+        public void Dispose() { opacity.Dispose(); image.Dispose(); }
     }
-    static void DrawGundam(Graphics g)
+
+    static ColorMatrix PosterColors(int style, int tone)
     {
-        Part(g,Dark,21,43,43,43,47,68,18,68);
-        Part(g,Silver,19,67,30,67,29,83,19,84);Part(g,White,34,67,44,67,46,84,35,84);
-        Part(g,White,20,73,29,73,27,84,19,83);Part(g,Silver,36,73,44,73,46,84,37,84);
-        Part(g,Red,17,83,29,83,30,88,13,88);Part(g,Red,35,83,47,83,51,88,34,88);
-        Part(g,White,17,59,31,57,31,70,18,69);Part(g,White,33,58,46,60,46,69,33,71);
-        Part(g,Red,27,60,37,60,38,69,32,73,26,68);
-        Part(g,Blue,21,40,43,40,45,58,38,64,25,62,19,56);
-        Part(g,White,8,40,21,38,26,45,21,53,6,49);Part(g,White,43,38,56,40,59,50,44,53,39,46);
-        Part(g,Silver,8,49,19,51,18,61,9,62);Part(g,Silver,46,51,56,50,56,63,47,63);
-        Part(g,White,8,59,17,58,18,70,7,70);Part(g,White,47,60,56,60,58,71,48,72);
-        Part(g,Gold,23,45,29,45,29,53,23,52);Part(g,Gold,35,45,41,45,41,52,35,53);
-        Line(g,Dark,.6f,25,47,28,47);Line(g,Dark,.6f,36,47,39,47);
-        Part(g,Red,29,54,35,54,38,60,32,64,27,59);
-        Part(g,White,22,23,27,18,38,18,43,24,41,37,34,42,25,38);
-        Part(g,Silver,36,24,42,25,40,37,35,39);
-        Part(g,Dark,25,28,40,28,39,32,25,32);
-        Line(g,Color.FromArgb(64,242,228),1,27,30,30,30);Line(g,Color.FromArgb(64,242,228),1,35,30,38,30);
-        Part(g,White,27,32,37,32,36,37,32,40,28,37);
-        Line(g,Dark,.7f,30,35,34,35);Line(g,Dark,.7f,30,37,34,37);
-        Part(g,Red,30,39,35,39,34,43,31,43);
-        Part(g,Gold,31,26,12,8,23,28,30,30);Part(g,Gold,33,26,52,8,42,28,34,30);
-        Part(g,White,30,18,35,18,35,28,30,28);Part(g,Red,31,21,34,21,34,26,31,26);
-        Part(g,Dark,4,59,10,57,13,62,12,80,7,82,7,69,3,67);
-        Line(g,Silver,1,6,61,10,61);
-        Part(g,White,48,56,60,58,60,77,54,83,48,76);
-        Part(g,Red,51,60,57,61,57,75,54,79,51,74);
-        Line(g,Gold,1,52,66,57,66);Line(g,Gold,1,54,63,54,71);
+        int nativeTone = style == Knight ? PetSkinStyles.Classic : style == Pirate ? PetSkinStyles.Pirate : PetSkinStyles.Cyber;
+        Color tint = tone == PetSkinStyles.Classic ? Color.White :
+            tone == PetSkinStyles.Pirate ? Color.FromArgb(255, 219, 165) : Color.FromArgb(166, 229, 255);
+        float tintAmount = tone == nativeTone ? 0 : tone == PetSkinStyles.Classic ? .50f : .28f;
+        float saturation = style == Gundam ? 2.25f : 1.95f;
+        // Adjust color away from luminance, then mix in the wardrobe palette.
+        float color = saturation * (1 - tintAmount);
+        float neutral = 1 - tintAmount - color;
+        float r = neutral + tintAmount * tint.R / 255f;
+        float g = neutral + tintAmount * tint.G / 255f;
+        float b = neutral + tintAmount * tint.B / 255f;
+        float redGain = style == Pirate ? 1.07f : style == Gundam ? .96f : 1f;
+        float blueGain = style == Pirate ? .92f : 1.07f;
+        return new ColorMatrix
+        {
+            Matrix00 = (color + .2126f * r) * redGain, Matrix01 = .2126f * g, Matrix02 = .2126f * b * blueGain,
+            Matrix10 = .7152f * r * redGain, Matrix11 = color + .7152f * g, Matrix12 = .7152f * b * blueGain,
+            Matrix20 = .0722f * r * redGain, Matrix21 = .0722f * g, Matrix22 = (color + .0722f * b) * blueGain
+        };
     }
 }
 

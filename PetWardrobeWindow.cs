@@ -9,14 +9,16 @@ internal sealed class WardrobePreview : Control
     internal BoundPetScene Scene;
     internal double Time;
     internal bool Resting;
-    internal WardrobePreview(){DoubleBuffered=true;ResizeRedraw=true;BackColor=KnightUi.Surface;AccessibleName="发型、键鼠、头饰、音乐样式与桌饰的动态预览";}
+    internal WardrobePreview(){DoubleBuffered=true;ResizeRedraw=true;BackColor=KnightUi.Surface;AccessibleName="衣服、发型、键鼠、头饰、音乐样式与背后虚影的动态预览";}
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);if(Scene==null)return;
         var g=e.Graphics;
         using(var fill=new LinearGradientBrush(ClientRectangle,Color.FromArgb(249,249,252),Color.FromArgb(232,237,242),90))g.FillRectangle(fill,ClientRectangle);
-        float scale=Math.Max(.1f,Math.Min((Width-28)/352f,(Height-24)/306f));
-        var saved=g.Save();g.TranslateTransform((Width-352*scale)/2,(Height-306*scale)/2-110*scale);g.ScaleTransform(scale,scale);
+        float top = Scene.ApparitionStyle == PetApparitions.None ? 110 : PetApparitions.Bounds.Top - 6;
+        float height = 416 - top;
+        float scale=Math.Max(.1f,Math.Min((Width-28)/352f,(Height-24)/height));
+        var saved=g.Save();g.TranslateTransform((Width-352*scale)/2,(Height-height*scale)/2-top*scale);g.ScaleTransform(scale,scale);
         Scene.Draw(g,Time,Resting,true);g.Restore(saved);
     }
 }
@@ -27,11 +29,11 @@ internal sealed class PetWardrobeWindow : KnightWindow
     readonly BoundPetScene scene;
     readonly InputFeedbackState input=new InputFeedbackState();
     readonly WardrobePreview preview=new WardrobePreview();
-    readonly ComboBox hair=new ComboBox(),keyboard=new ComboBox(),mouse=new ComboBox(),pad=new ComboBox(),headwear=new ComboBox(),musicStyle=new ComboBox(),listening=new ComboBox(),ornament=new ComboBox(),palette=new ComboBox(),mode=new ComboBox();
+    readonly ComboBox hair=new ComboBox(),clothing=new ComboBox(),keyboard=new ComboBox(),mouse=new ComboBox(),pad=new ComboBox(),headwear=new ComboBox(),musicStyle=new ComboBox(),listening=new ComboBox(),apparition=new ComboBox(),palette=new ComboBox(),mode=new ComboBox();
     readonly Label status=new Label();
     readonly KnightButton[] outfitButtons=new KnightButton[3];
     readonly Font uiFont=new Font("Microsoft YaHei UI",14,FontStyle.Regular,GraphicsUnit.Pixel);
-    readonly Action<int,int,int,int,int,int,int,int,int> apply;
+    readonly Action<int,int,int,int,int,int,int,int,int,int> apply;
     readonly bool readOnly;
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
     readonly Stopwatch clock=Stopwatch.StartNew();
@@ -39,19 +41,19 @@ internal sealed class PetWardrobeWindow : KnightWindow
     int swordBeat;
     double previous,nextTap;
     internal PetWardrobeWindow(string root,int hairStyle,Action<int> apply,bool readOnly=false)
-        : this(root,hairStyle,0,0,0,0,0,0,0,(h,k,m,d,w,p,a,l)=>apply(h),readOnly) {}
+        : this(root,hairStyle,0,0,0,0,0,0,0,0,PetClothingStyles.Knight,(h,k,m,d,w,p,a,l,o,c)=>apply(h),readOnly) {}
     internal PetWardrobeWindow(string root,int hairStyle,int keyboardStyle,int mouseStyle,int padStyle,int headwearStyle,int colorPalette,int musicBackdrop,int listeningStyle,Action<int,int,int,int,int,int,int,int> apply,bool readOnly=false)
-        : this(root,hairStyle,keyboardStyle,mouseStyle,padStyle,headwearStyle,colorPalette,musicBackdrop,listeningStyle,0,(h,k,m,d,w,p,a,l,o)=>apply(h,k,m,d,w,p,a,l),readOnly) {}
-    internal PetWardrobeWindow(string root,int hairStyle,int keyboardStyle,int mouseStyle,int padStyle,int headwearStyle,int colorPalette,int musicBackdrop,int listeningStyle,int ornamentStyle,Action<int,int,int,int,int,int,int,int,int> apply,bool readOnly=false)
+        : this(root,hairStyle,keyboardStyle,mouseStyle,padStyle,headwearStyle,colorPalette,musicBackdrop,listeningStyle,0,PetClothingStyles.Knight,(h,k,m,d,w,p,a,l,o,c)=>apply(h,k,m,d,w,p,a,l),readOnly) {}
+    internal PetWardrobeWindow(string root,int hairStyle,int keyboardStyle,int mouseStyle,int padStyle,int headwearStyle,int colorPalette,int musicBackdrop,int listeningStyle,int apparitionStyle,int clothingStyle,Action<int,int,int,int,int,int,int,int,int,int> apply,bool readOnly=false)
     {
         this.apply=apply;this.readOnly=readOnly;Font=uiFont;Text="皮肤";
         ClientSize=new Size(860,670);MinimumSize=new Size(800,630);StartPosition=FormStartPosition.CenterScreen;
-        sprites=new KeyboardPetSprites(root);scene=new BoundPetScene(sprites,new PetInputBindings(),input);scene.SetViewWidth(BoundPetScene.CompactWidth);
+        sprites=new KeyboardPetSprites(root);scene=new BoundPetScene(sprites,new PetInputBindings(),input,previewApparition:true);scene.SetViewWidth(BoundPetScene.CompactWidth);
         preview.Scene=scene;
         var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Padding=new Padding(18,14,18,16)};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,324));layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         var left=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=6,Padding=new Padding(0,0,14,0)};
-        foreach(float height in new[]{32f,52f,396f,0f,48f,48f})left.RowStyles.Add(height==0 ? new RowStyle(SizeType.Percent,100) : new RowStyle(SizeType.Absolute,height));
+        foreach(float height in new[]{32f,44f,400f,0f,48f,48f})left.RowStyles.Add(height==0 ? new RowStyle(SizeType.Percent,100) : new RowStyle(SizeType.Absolute,height));
         var presets=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty};
         presets.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,70));
         presets.Controls.Add(new Label {Text="整体套装",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=KnightUi.Ink,Margin=Padding.Empty},0,0);
@@ -63,18 +65,19 @@ internal sealed class PetWardrobeWindow : KnightWindow
         }
         left.Controls.Add(presets,0,0);
         left.Controls.Add(new Label {Text="整体配色统一基调，造型独立搭配。\n持续打字时戴上所选头饰。",Dock=DockStyle.Fill,ForeColor=KnightUi.Steel},0,1);
-        var fields=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=9,Margin=Padding.Empty};
+        var fields=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=10,Margin=Padding.Empty};
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,70));fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         AddChoice(fields,0,"整体配色",palette,new object[]{"经典","海盗","赛博"},PaletteIndex(colorPalette));
         AddChoice(fields,1,"发型",hair,new object[]{"利落短发","层次长发","蓬松双马尾"},PetHairStyles.Normalize(hairStyle));
-        AddChoice(fields,2,"键盘",keyboard,new object[]{"骑士键盘","羊皮卷","悬浮投影键盘"},KeyboardIndex(keyboardStyle));
-        AddChoice(fields,3,"鼠标",mouse,new object[]{"骑士鼠标","骑士剑鼠标","全息投影"},MouseIndex(mouseStyle));
-        AddChoice(fields,4,"鼠标垫",pad,new object[]{"骑士鼠标垫","航海图","全息电路桌垫"},PetPadStyles.Normalize(padStyle));
-        AddChoice(fields,5,"打字头饰",headwear,new object[]{"骑士头盔","海盗帽","战术全息目镜"},PetHeadwearStyles.Normalize(headwearStyle));
-        AddChoice(fields,6,"音律",musicStyle,new object[]{"节奏光柱","海浪波纹","黑客代码流"},PetMusicStyles.Normalize(musicBackdrop));
-        AddChoice(fields,7,"听歌配饰",listening,new object[]{"原版耳机","头巾","神经音频模块"},PetListeningStyles.Normalize(listeningStyle));
-        AddChoice(fields,8,"桌饰",ornament,new object[]{"无桌饰","原版骑士","海盗船","高达"},PetDeskOrnaments.Normalize(ornamentStyle));
-        foreach(var choice in new[]{hair,keyboard,mouse,pad,headwear,palette,musicStyle,listening,ornament})choice.SelectedIndexChanged+=(s,e)=>UpdatePreview();
+        AddChoice(fields,2,"衣服",clothing,new object[]{"纹章骑士服","船长礼服","霓虹战术服"},PetClothingStyles.Normalize(clothingStyle));
+        AddChoice(fields,3,"键盘",keyboard,new object[]{"骑士键盘","羊皮卷","悬浮投影键盘"},KeyboardIndex(keyboardStyle));
+        AddChoice(fields,4,"鼠标",mouse,new object[]{"骑士鼠标","骑士剑鼠标","全息投影"},MouseIndex(mouseStyle));
+        AddChoice(fields,5,"鼠标垫",pad,new object[]{"骑士鼠标垫","航海图","全息电路桌垫"},PetPadStyles.Normalize(padStyle));
+        AddChoice(fields,6,"打字头饰",headwear,new object[]{"骑士头盔","海盗帽","战术全息目镜"},PetHeadwearStyles.Normalize(headwearStyle));
+        AddChoice(fields,7,"音律",musicStyle,new object[]{"节奏光柱","海浪波纹","黑客代码流"},PetMusicStyles.Normalize(musicBackdrop));
+        AddChoice(fields,8,"听歌配饰",listening,new object[]{"原版耳机","头巾","神经音频模块"},PetListeningStyles.Normalize(listeningStyle));
+        AddChoice(fields,9,"背后虚影",apparition,new object[]{"关闭","像素骑士","像素海盗","像素高达"},PetApparitions.Normalize(apparitionStyle));
+        foreach(var choice in new[]{hair,clothing,keyboard,mouse,pad,headwear,palette,musicStyle,listening,apparition})choice.SelectedIndexChanged+=(s,e)=>UpdatePreview();
         left.Controls.Add(fields,0,2);
         var buttons=new FlowLayoutPanel {Dock=DockStyle.Fill,WrapContents=false,Margin=Padding.Empty};
         var wear=new KnightButton {Text="应用并保存",Primary=true,Size=new Size(142,36),Margin=new Padding(0,4,8,0),Enabled=!readOnly};
@@ -99,7 +102,9 @@ internal sealed class PetWardrobeWindow : KnightWindow
     }
     void UpdatePreview()
     {
-        scene.Portrait.SetHairStyle(hair.SelectedIndex);scene.SetKeyboardStyle(SelectedKeyboardStyle);scene.SetMouseStyle(SelectedMouseStyle);scene.SetPadStyle(pad.SelectedIndex);scene.Portrait.SetHeadwearStyle(headwear.SelectedIndex);scene.SetTone(SelectedPalette);scene.SetMusicStyle(musicStyle.SelectedIndex);scene.Portrait.SetListeningStyle(listening.SelectedIndex);scene.SetOrnamentStyle(ornament.SelectedIndex);preview.Invalidate();
+        scene.Portrait.SetHairStyle(hair.SelectedIndex);scene.SetKeyboardStyle(SelectedKeyboardStyle);scene.SetMouseStyle(SelectedMouseStyle);scene.SetPadStyle(pad.SelectedIndex);scene.Portrait.SetHeadwearStyle(headwear.SelectedIndex);scene.SetTone(SelectedPalette);scene.SetMusicStyle(musicStyle.SelectedIndex);scene.Portrait.SetListeningStyle(listening.SelectedIndex);scene.SetApparitionStyle(apparition.SelectedIndex, clock.Elapsed.TotalSeconds);
+        scene.SetClothingStyle(clothing.SelectedIndex);
+        preview.Invalidate();
         status.Text=readOnly ? "预览模式，不保存个人设置。" : "正在预览搭配；点击“应用并保存”后生效。";
         status.ForeColor=KnightUi.Steel;
     }
@@ -113,6 +118,7 @@ internal sealed class PetWardrobeWindow : KnightWindow
     {
         bool pirate=outfit==1,cyber=outfit==2;
         SelectHairStyle(cyber ? PetHairStyles.TwinPonytails : pirate ? PetHairStyles.Short : PetHairStyles.Reference);
+        SelectClothingStyle(outfit);
         SelectPalette(cyber ? PetSkinStyles.Cyber : pirate ? PetSkinStyles.Pirate : PetSkinStyles.Classic);
         SelectKeyboardStyle(cyber ? PetKeyboardStyles.Cyberpunk : pirate ? PetKeyboardStyles.Parchment : PetKeyboardStyles.Original);
         SelectMouseStyle(cyber ? PetMouseStyles.Cyberpunk : pirate ? PetMouseStyles.KnightSword : PetMouseStyles.Original);
@@ -120,7 +126,7 @@ internal sealed class PetWardrobeWindow : KnightWindow
         SelectHeadwearStyle(cyber ? PetHeadwearStyles.CyberVisor : pirate ? PetHeadwearStyles.PirateHat : PetHeadwearStyles.Helmet);
         SelectMusicStyle(cyber ? PetMusicStyles.HackerCode : pirate ? PetMusicStyles.OceanWaves : PetMusicStyles.LevelBars);
         SelectListeningStyle(cyber ? PetListeningStyles.NeuralAudio : pirate ? PetListeningStyles.Bandana : PetListeningStyles.Headphones);
-        SelectOrnamentStyle(cyber ? PetDeskOrnaments.Gundam : pirate ? PetDeskOrnaments.PirateShip : PetDeskOrnaments.Knight);
+        SelectApparitionStyle(cyber ? PetApparitions.Gundam : pirate ? PetApparitions.Pirate : PetApparitions.Knight);
     }
     internal void SelectPadStyle(int style){pad.SelectedIndex=PetPadStyles.Normalize(style);}
     internal void SelectHeadwearStyle(int style){headwear.SelectedIndex=PetHeadwearStyles.Normalize(style);}
@@ -129,14 +135,15 @@ internal sealed class PetWardrobeWindow : KnightWindow
     internal void SelectMouseStyle(int style){mouse.SelectedIndex=MouseIndex(style);}
     internal void SelectMusicStyle(int style){musicStyle.SelectedIndex=PetMusicStyles.Normalize(style);}
     internal void SelectListeningStyle(int style){listening.SelectedIndex=PetListeningStyles.Normalize(style);}
-    internal void SelectOrnamentStyle(int style){ornament.SelectedIndex=PetDeskOrnaments.Normalize(style);}
+    internal void SelectApparitionStyle(int style){apparition.SelectedIndex=PetApparitions.Normalize(style);}
+    internal void SelectClothingStyle(int style){clothing.SelectedIndex=PetClothingStyles.Normalize(style);}
     static int PaletteIndex(int style){style=PetSkinStyles.Normalize(style);return style==PetSkinStyles.Cyber ? 2 : style;}
     int SelectedPalette { get { return palette.SelectedIndex==2 ? PetSkinStyles.Cyber : palette.SelectedIndex; } }
     internal void SelectPalette(int style){palette.SelectedIndex=PaletteIndex(style);}
     internal void ApplySelection()
     {
         if(readOnly)return;
-        try {apply(hair.SelectedIndex,SelectedKeyboardStyle,SelectedMouseStyle,pad.SelectedIndex,headwear.SelectedIndex,SelectedPalette,musicStyle.SelectedIndex,listening.SelectedIndex,ornament.SelectedIndex);status.Text="已应用并保存当前搭配。";status.ForeColor=KnightUi.Steel;}
+        try {apply(hair.SelectedIndex,SelectedKeyboardStyle,SelectedMouseStyle,pad.SelectedIndex,headwear.SelectedIndex,SelectedPalette,musicStyle.SelectedIndex,listening.SelectedIndex,apparition.SelectedIndex,clothing.SelectedIndex);status.Text="已应用并保存当前搭配。";status.ForeColor=KnightUi.Steel;}
         catch(Exception error){status.Text="未保存："+error.Message;status.ForeColor=KnightUi.Red;}
     }
     void Tick(object sender,EventArgs e)

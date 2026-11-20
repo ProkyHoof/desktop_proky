@@ -52,7 +52,7 @@ try {
         $stop = Start-Process -FilePath (Join-Path $stage 'DesktopPet.exe') -ArgumentList '--exit' -Wait -PassThru -WindowStyle Hidden
         if ($stop.ExitCode -ne 0) { throw '无法请求桌宠退出。' }
         foreach ($pet in @(Get-Process DesktopPet -ErrorAction SilentlyContinue)) {
-            if (-not $pet.WaitForExit(7000)) { throw '请先关闭桌宠和日历，再安装。' }
+            if (-not $pet.WaitForExit(7000)) { throw '请先关闭桌宠，再安装。' }
         }
     }
     # A relocated upgrade keeps the old personal files as a recovery copy.

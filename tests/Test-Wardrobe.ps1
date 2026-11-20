@@ -15,7 +15,7 @@ try {
     $assembly=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes($library))
     $testRoot=Join-Path $cache ('run-'+[Guid]::NewGuid().ToString('N'))
     $imagePath=if($Preview){Join-Path $projectRoot 'assets\previews\wardrobe-window.png'}else{''}
-    $testMethod=if($OrnamentsOnly){'CheckDeskOrnaments'}else{'Run'}
+    $testMethod=if($OrnamentsOnly){'CheckApparitions'}else{'Run'}
     $method=$assembly.GetType('WardrobeTests').GetMethod($testMethod,[Reflection.BindingFlags]'Static,NonPublic')
     try {$method.Invoke($null,[object[]]@([string]$projectRoot,[string]$testRoot,[string]$imagePath))}
     catch {Write-Host $_.Exception.ToString();throw}

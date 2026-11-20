@@ -40,7 +40,7 @@ function Read-PetManifest([string]$Root) {
     $manifest = [IO.File]::ReadAllText($path) | ConvertFrom-Json
     if ($manifest.appId -ne $PetAppId -or @($manifest.files).Count -lt 3) { throw '安装清单无效，未修改任何文件。' }
     foreach ($relative in $manifest.files) {
-        if ($relative -notmatch '^(DesktopPet\.exe|Uninstall\.ps1|PackageSupport\.ps1|assets[\\/]keyboard-knight[\\/](soft-style-arms\.png|rig[\\/]([\w-]+\.png|layers\.tsv|eyelid-(left|right)[\\/]\d{2}\.png)))$') { throw '安装清单包含非程序文件。' }
+        if ($relative -notmatch '^(DesktopPet\.exe|Uninstall\.ps1|PackageSupport\.ps1|assets[\\/]keyboard-knight[\\/](soft-style-arms\.png|apparitions[\\/](knight|pirate|gundam)\.png|rig[\\/]([\w-]+\.png|layers\.tsv|eyelid-(left|right)[\\/]\d{2}\.png)))$') { throw '安装清单包含非程序文件。' }
         $file = Get-PetChildPath $Root $relative
         if (Test-Path -LiteralPath $file -PathType Container) { throw '安装文件被目录替代，无法继续。' }
     }
@@ -74,18 +74,6 @@ function Copy-PetPersonalData([string]$Source, [string]$Target) {
         if ((Test-Path -LiteralPath $from -PathType Leaf) -and -not (Test-Path -LiteralPath $to)) {
             [void][IO.Directory]::CreateDirectory((Split-Path -Parent $to))
             [IO.File]::Copy($from, $to, $false)
-        }
-    }
-    $calendar = Get-PetChildPath $Source 'data/calendar'
-    if (Test-Path -LiteralPath $calendar -PathType Container) {
-        Assert-PetPlainTree $calendar
-        foreach ($file in Get-ChildItem -LiteralPath $calendar -Recurse -File -Force) {
-            if ($file.Name -notmatch '\.json(\.bak)?$') { continue }
-            $to = Get-PetChildPath $Target ('data/calendar/' + $file.FullName.Substring($calendar.Length + 1))
-            if (-not (Test-Path -LiteralPath $to)) {
-                [void][IO.Directory]::CreateDirectory((Split-Path -Parent $to))
-                [IO.File]::Copy($file.FullName, $to, $false)
-            }
         }
     }
 }
@@ -217,7 +205,7 @@ function New-PetInstallForm([string]$InitialRoot, [bool]$LegacyAvailable, [bool]
         finally { $dialog.Dispose() }
     }.GetNewClosure())
     $description = New-Object Windows.Forms.Label
-    $description.Text = '个人配置、API 设置及日历记录均保存在所选目录的 user-data 文件夹。请选择当前用户可写的独立文件夹。'
+    $description.Text = '个人配置和 API 设置保存在所选目录的 user-data 文件夹。请选择当前用户可写的独立文件夹。'
     $description.SetBounds(20,108,560,44)
     $desktop = New-Object Windows.Forms.CheckBox
     $desktop.Text = '创建桌面快捷方式'
@@ -225,7 +213,7 @@ function New-PetInstallForm([string]$InitialRoot, [bool]$LegacyAvailable, [bool]
     $desktop.Checked = $true
     $desktop.SetBounds(20,159,560,26)
     $import = New-Object Windows.Forms.CheckBox
-    $import.Text = if ($LegacyAvailable) { '导入旧版个人配置和日历（保留原文件）' } else { '导入旧版个人配置和日历（未检测到旧版数据）' }
+    $import.Text = if ($LegacyAvailable) { '导入旧版个人配置（保留原文件）' } else { '导入旧版个人配置（未检测到旧版数据）' }
     $import.Checked = $ImportLegacy
     $import.Enabled = $LegacyAvailable
     $import.SetBounds(20,189,560,26)

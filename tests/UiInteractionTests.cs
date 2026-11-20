@@ -23,6 +23,8 @@ internal static class UiInteractionTests
         using(var pet=new KeyboardPetWindow(root,true))
         {
             Get<Timer>(pet,"timer").Stop();var menu=Get<PetContextMenu>(pet,"menu");
+            Check(!menu.Items.Commands().Any(item=>item.Text=="日历计划…"||item.Text=="打字统计…"||item.Text=="运行状态"||item.Text=="闭眼休息"),
+                "Removed features have no menu entries");
             var work=new Rectangle(0,0,1920,1080);
             // Leave room below for the expanded menu; edge clamping is tested separately.
             int menuTop=Math.Max(work.Top,Math.Min(300,work.Bottom-menu.Height));
@@ -190,19 +192,36 @@ internal static class UiInteractionTests
                 CheckModalInput(pet,typeof(PetChatSettingsWindow),()=>typeof(PetChatWindow).GetMethod("Configure",Private).Invoke(chat,new object[] {null,EventArgs.Empty}));
             });
             CheckModalInput(pet,typeof(PetBindingEditor),()=>menu.Items.Commands().Single(i=>i.Text=="按键与鼠标设置…").PerformClick());
-            menu.Items.Commands().Single(i=>i.Text=="日历计划…").PerformClick();
-            var worker=Get<Thread>(hook,"worker");QueueTyping(hook);hook.DrainPending();
-            Check(hook.Enabled&&hook.ProbePump(),"Calendar leaves input active alongside other windows");
-            var rest=menu.Items.Commands().Single(i=>i.Text=="闭眼休息");
-            rest.Checked=true;Check(!hook.Enabled&&!pet.inputState.HasKeys,"Explicit rest still stops and clears input with calendar open");
-            rest.Checked=false;Check(hook.Enabled,"Leaving rest resumes input with calendar open");
+            Get<PetSpeechBubble>(pet,"speechBubble").Dismiss();
+            var worker=Get<Thread>(hook,"worker");
+            var clock=Get<System.Diagnostics.Stopwatch>(pet,"clock");
+            var lastActivity=typeof(KeyboardPetWindow).GetField("lastActivity",Private);
+            var tick=typeof(KeyboardPetWindow).GetMethod("Tick",Private);
+            pet.inputState.Clear();
+            lastActivity.SetValue(pet,clock.Elapsed.TotalSeconds-5);
+            tick.Invoke(pet,new object[] {null,EventArgs.Empty});
+            Check(Get<bool>(pet,"resting")&&pet.scene.Portrait.Blink==1&&pet.scene.Portrait.MouthIndex==7,
+                "Inactivity automatically closes the eyes");
+            Check(hook.Enabled&&hook.ProbePump()&&Get<Thread>(hook,"worker")==worker,"Rest keeps the same input worker active");
+
+            QueueTyping(hook);
+            tick.Invoke(pet,new object[] {null,EventArgs.Empty});
+            Check(!Get<bool>(pet,"resting")&&pet.inputState.KeyDisplay(clock.Elapsed.TotalSeconds).Contains("A")&&
+                pet.scene.Hands.Typing,"The first short tap wakes the pet and reaches the typing animation");
+
+            pet.inputState.Clear();
+            lastActivity.SetValue(pet,clock.Elapsed.TotalSeconds-5);
+            tick.Invoke(pet,new object[] {null,EventArgs.Empty});
+            Check(Get<bool>(pet,"resting"),"The pet returns to rest after typing stops");
+            pet.inputState.Wheel(120,false,clock.Elapsed.TotalSeconds);
+            tick.Invoke(pet,new object[] {null,EventArgs.Empty});
+            Check(!Get<bool>(pet,"resting"),"Mouse feedback wakes the pet from rest");
+
             var follow=menu.Items.Commands().Single(i=>i.Text=="跟随键鼠动作");
             follow.Checked=false;Check(!hook.Enabled,"Explicit follow opt-out remains effective");
-            follow.Checked=true;Check(hook.Enabled,"Enabling follow works with calendar open");
-            worker=Get<Thread>(hook,"worker");QueueTyping(hook);Get<PetCalendarWindow>(pet,"calendarWindow").Close();
-            Check(hook.Enabled&&Get<Thread>(hook,"worker")==worker&&hook.PendingCount>=2,"Closing calendar does not restart the worker or lose pending events");
+            follow.Checked=true;Check(hook.Enabled,"Enabling follow resumes input");
         }
-        Console.WriteLine("PASS: typing hooks, key display and hand animation continue across chat, nested AI settings, binding settings and calendar; explicit rest/follow switches still work.");
+        Console.WriteLine("PASS: input across chat and settings, automatic closed-eye rest, first-tap wake, mouse feedback and follow switch.");
     }
     static void CheckStartup(string root)
     {

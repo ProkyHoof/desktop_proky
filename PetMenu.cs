@@ -6,7 +6,7 @@ using System.Windows.Forms;
 // Keep native menu navigation, placement and accessibility; only replace its paint.
 internal sealed class PetContextMenu : ContextMenuStrip
 {
-    internal enum Glyph { None, Toggle, Choice, Settings, Size, Hair, Keys, Corner, Status, Exit }
+    internal enum Glyph { None, Toggle, Choice, Settings, Size, Hair, Keys, Corner, Exit }
     readonly Font menuFont = new Font("Microsoft YaHei UI", 9f);
     readonly float scale;
 
@@ -41,8 +41,7 @@ internal sealed class PetContextMenu : ContextMenuStrip
             if (!item.Available) continue;
             item.AutoSize = false;
             item.Margin = Padding.Empty;
-            bool status = item.Tag is Glyph && (Glyph)item.Tag == Glyph.Status;
-            item.Size = new Size(width - Px(2), Px(item is ToolStripSeparator ? 9 : status ? 24 : 29));
+            item.Size = new Size(width - Px(2), Px(item is ToolStripSeparator ? 9 : 29));
             height += item.Height;
             var parent = item as ToolStripMenuItem;
             if (parent != null && parent.HasDropDownItems)
@@ -129,7 +128,7 @@ internal sealed class PetMenuRenderer : ToolStripRenderer
             else using(var p=new Pen(KnightUi.Silver))g.DrawRectangle(p,bounds.X+3,bounds.Y+3,bounds.Width-6,bounds.Height-6);
             return;
         }
-        KnightIcon icon=item.Text.Contains("日历")?KnightIcon.Calendar:item.Text.Contains("对话")?KnightIcon.Chat:
+        KnightIcon icon=item.Text.Contains("对话")?KnightIcon.Chat:
             role==PetContextMenu.Glyph.Settings?KnightIcon.Settings:role==PetContextMenu.Glyph.Size?KnightIcon.Size:
             role==PetContextMenu.Glyph.Hair?KnightIcon.Hair:role==PetContextMenu.Glyph.Keys?KnightIcon.Keyboard:
             role==PetContextMenu.Glyph.Corner?KnightIcon.Pin:role==PetContextMenu.Glyph.Exit?KnightIcon.Power:KnightIcon.None;

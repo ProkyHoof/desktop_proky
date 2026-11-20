@@ -194,7 +194,7 @@ internal sealed class KnightButton : Button
     }
 }
 
-internal enum KnightIcon { None, Shield, Chat, Settings, Keyboard, Calendar, Mic, Send, Plus, Reset, Save, Close, Minimize, Maximize, Trash, Check, Search, Power, Size, Hair, Pin, Music, ArrowLeft, ArrowRight, Link }
+internal enum KnightIcon { None, Shield, Chat, Settings, Keyboard, Mic, Send, Plus, Reset, Save, Close, Minimize, Maximize, Trash, Check, Search, Power, Size, Hair, Pin, Music, ArrowLeft, ArrowRight, Link }
 
 internal static class KnightIcons
 {
@@ -212,7 +212,6 @@ internal static class KnightIcons
         if(text.Contains("测试"))return KnightIcon.Link;
         if(text.StartsWith("‹"))return KnightIcon.ArrowLeft;
         if(text.EndsWith("›"))return KnightIcon.ArrowRight;
-        if(text=="今天")return KnightIcon.Calendar;
         if(text.Contains("完成")||text=="知道了")return KnightIcon.Check;
         return KnightIcon.None;
     }
@@ -228,7 +227,6 @@ internal static class KnightIcons
                 case KnightIcon.Chat:g.DrawLines(p,new[] {new PointF(3,3),new PointF(17,3),new PointF(17,14),new PointF(9,14),new PointF(4,18),new PointF(4,14),new PointF(3,14),new PointF(3,3)});g.DrawLine(p,6,7,14,7);g.DrawLine(p,6,10,11,10);break;
                 case KnightIcon.Settings:for(int i=0;i<8;i++){double a=i*Math.PI/4;g.DrawLine(p,10+(float)Math.Cos(a)*6,10+(float)Math.Sin(a)*6,10+(float)Math.Cos(a)*8,10+(float)Math.Sin(a)*8);}g.DrawEllipse(p,4,4,12,12);g.DrawEllipse(p,8,8,4,4);break;
                 case KnightIcon.Keyboard:g.DrawRectangle(p,2,5,16,11);for(int y=8;y<=11;y+=3)for(int x=5;x<=15;x+=3)g.DrawLine(p,x,y,x+.4f,y);g.DrawLine(p,6,14,14,14);break;
-                case KnightIcon.Calendar:g.DrawRectangle(p,3,4,14,13);g.DrawLine(p,3,8,17,8);g.DrawLine(p,7,2,7,5);g.DrawLine(p,13,2,13,5);g.DrawRectangle(p,6,11,2,2);g.DrawLine(p,11,12,14,12);break;
                 case KnightIcon.Mic:g.DrawArc(p,7,2,6,11,0,360);g.DrawArc(p,4,5,12,11,0,180);g.DrawLine(p,10,16,10,18);g.DrawLine(p,7,18,13,18);break;
                 case KnightIcon.Send:g.DrawPolygon(p,new[] {new PointF(2,3),new PointF(18,10),new PointF(2,17),new PointF(5,10)});g.DrawLine(p,5,10,13,10);break;
                 case KnightIcon.Plus:g.DrawLine(p,10,3,10,17);g.DrawLine(p,3,10,17,10);break;

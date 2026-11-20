@@ -154,7 +154,6 @@ internal sealed class InputFeedbackState
     readonly HashSet<int> keys = new HashSet<int>(), buttons = new HashSet<int>();
     readonly Dictionary<int, double> strikes = new Dictionary<int, double>();
     internal readonly TypingWorkRhythm Work=new TypingWorkRhythm();
-    internal event Action<DateTime> TypingPressed;
     int lastX, lastY;
     string displayLabel = "";
     double displayUntil;
@@ -238,7 +237,7 @@ internal sealed class InputFeedbackState
         }
     }
 
-    internal void Key(int code, bool down, double now, DateTime? localAt = null, bool recordTyping = true)
+    internal void Key(int code, bool down, double now)
     {
         if (code == 0) return;
         Revision++; keyPulseUntil = now + .24;
@@ -249,10 +248,7 @@ internal sealed class InputFeedbackState
             if (fresh)
             {
                 if(TypingWorkRhythm.IsTypingKey(code)&&!keys.Any(k=>Rank(k)==0||Rank(k)==2||Rank(k)==3))
-                {
                     Work.Press(now);
-                    if(recordTyping && TypingPressed!=null)TypingPressed(localAt ?? DateTime.Now);
-                }
                 displayLabel = LiveChord;
                 if (BubbleMode) CaptureBubble(code);
             }
@@ -323,7 +319,7 @@ internal sealed class GlobalInputFeedback : IDisposable
     [StructLayout(LayoutKind.Sequential)] struct MouseData { internal int X, Y; internal uint Data, Flags, Time; internal UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] struct NativeMessage
     { internal IntPtr Window; internal uint Message; internal UIntPtr WParam; internal IntPtr LParam; internal uint Time; internal int X,Y; internal uint Private; }
-    struct PendingInput { internal int Message; internal KeyboardData Key; internal MouseData Pointer; internal double At; internal DateTime LocalAt; }
+    struct PendingInput { internal int Message; internal KeyboardData Key; internal MouseData Pointer; internal double At; }
     [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int id, HookProc callback, IntPtr module, uint thread);
     [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
     [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr data);
@@ -393,7 +389,7 @@ internal sealed class GlobalInputFeedback : IDisposable
         // Seed already-held keys once; subsequent input is event driven.
         double t = now();
         for (int key = 8; key < 255; key++)
-            if (key != 16 && key != 17 && key != 18 && (GetAsyncKeyState(key) & 0x8000) != 0) state.Key(key, true, t, recordTyping:false);
+            if (key != 16 && key != 17 && key != 18 && (GetAsyncKeyState(key) & 0x8000) != 0) state.Key(key, true, t);
         foreach (int button in new[] { 1, 2, 3, 4, 5 })
         {
             int vk = button == 1 ? 1 : button == 2 ? 2 : button == 3 ? 4 : button == 4 ? 5 : 6;
@@ -427,7 +423,7 @@ internal sealed class GlobalInputFeedback : IDisposable
         foreach(var item in draining)
         {
             int m=item.Message;double t=item.At;
-            if(m==0x100||m==0x101||m==0x104||m==0x105)ApplyKey(item.Key,m,t,item.LocalAt);
+            if(m==0x100||m==0x101||m==0x104||m==0x105)ApplyKey(item.Key,m,t);
             else
             {
                 var input=item.Pointer;
@@ -457,12 +453,12 @@ internal sealed class GlobalInputFeedback : IDisposable
             int m = (int)message.ToInt64();
             if (m == 0x100 || m == 0x101 || m == 0x104 || m == 0x105)
             {
-                Enqueue(new PendingInput {Message=m,Key=(KeyboardData)Marshal.PtrToStructure(data,typeof(KeyboardData)),At=now(),LocalAt=DateTime.Now});
+                Enqueue(new PendingInput {Message=m,Key=(KeyboardData)Marshal.PtrToStructure(data,typeof(KeyboardData)),At=now()});
             }
         }
         return CallNextHookEx(IntPtr.Zero, code, message, data);
     }
-    void ApplyKey(KeyboardData input,int m,double t,DateTime localAt)
+    void ApplyKey(KeyboardData input,int m,double t)
     {
                 if (input.Key == 0) return;
                 int key = (int)input.Key;
@@ -478,7 +474,7 @@ internal sealed class GlobalInputFeedback : IDisposable
                         case 0x52: key = 96; break; case 0x53: key = 110; break;
                     }
                 }
-                state.Key(key, m == 0x100 || m == 0x104, t, localAt, (input.Flags & 0x10) == 0);
+                state.Key(key, m == 0x100 || m == 0x104, t);
     }
     IntPtr Mouse(int code, IntPtr message, IntPtr data)
     {

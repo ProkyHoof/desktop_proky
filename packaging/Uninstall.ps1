@@ -9,7 +9,7 @@ try {
     if ($KeepUserData -and $RemoveUserData) { throw '不能同时选择保留和删除个人数据。' }
     $keep = -not $RemoveUserData
     if (-not $Silent) {
-        $answer = [Windows.Forms.MessageBox]::Show(('是否保留个人配置和日历记录？' + [Environment]::NewLine + '是：卸载程序，保留 user-data。' + [Environment]::NewLine + '否：卸载程序并删除 user-data。' + [Environment]::NewLine + '取消：退出卸载。'),'卸载桌宠助手','YesNoCancel','Question','Button1')
+        $answer = [Windows.Forms.MessageBox]::Show(('是否保留个人数据？' + [Environment]::NewLine + '是：卸载程序，保留 user-data。' + [Environment]::NewLine + '否：卸载程序并删除 user-data。' + [Environment]::NewLine + '取消：退出卸载。'),'卸载桌宠助手','YesNoCancel','Question','Button1')
         if ($answer -eq 'Cancel') { exit 0 }
         $keep = $answer -eq 'Yes'
     }
@@ -19,7 +19,7 @@ try {
         $stop = Start-Process -FilePath $app -ArgumentList '--exit' -Wait -PassThru -WindowStyle Hidden
         if ($stop.ExitCode -ne 0) { throw '无法请求桌宠退出。' }
         foreach ($pet in @(Get-Process DesktopPet -ErrorAction SilentlyContinue)) {
-            if (-not $pet.WaitForExit(7000)) { throw '请先关闭桌宠和日历，再卸载。' }
+            if (-not $pet.WaitForExit(7000)) { throw '请先关闭桌宠，再卸载。' }
         }
     }
     # Delete only files owned by the installation manifest, preserving unrelated files.

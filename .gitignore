@@ -8,7 +8,7 @@ input_bindings.tsv*
 .env.*
 !.env.example
 /data/calendar/**
-!/data/calendar/README.md
+/data/typing/**
 
 # Reproducible outputs and development caches
 *.exe

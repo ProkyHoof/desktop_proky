@@ -28,7 +28,6 @@ internal static class CurrentPetTests
             HairstyleTests.Run(root);
             TopMostTests.Run(root);
             UiInteractionTests.Run(root);
-            CalendarTests.Run(root);
             ChatTests.Run(root);
             WindowEdgeTests.Run(root);
             using(var pet=new KeyboardPetWindow(root,true))
@@ -57,18 +56,18 @@ internal static class StorageTests
         string legacy=Path.Combine(temporary,"legacy"),user=PetStorage.DataRoot(legacy);
         try
         {
-            Directory.CreateDirectory(Path.Combine(legacy,"data","calendar","history","snapshot"));
+            Directory.CreateDirectory(Path.Combine(legacy,"data","calendar"));
             Directory.CreateDirectory(user);
             File.WriteAllText(Path.Combine(legacy,"keyboard_pet_config.json"),"{\"size\":252}");
             File.WriteAllText(Path.Combine(user,"keyboard_pet_config.json"),"{\"size\":420}");
             File.WriteAllText(Path.Combine(legacy,"ai_chat_config.json"),"encrypted-settings");
-            File.WriteAllText(Path.Combine(legacy,"data","calendar","2026-11-06.json.bak"),"backup");
-            File.WriteAllText(Path.Combine(legacy,"data","calendar","history","snapshot","2026-11-06.json"),"history");
+            string legacyCalendar=Path.Combine(legacy,"data","calendar","2026-11-06.json");
+            File.WriteAllText(legacyCalendar,"legacy calendar");
             PetStorage.Migrate(legacy,user);
             Check(File.ReadAllText(Path.Combine(user,"keyboard_pet_config.json")).Contains("420"),"Migration must not overwrite newer preferences");
             Check(File.ReadAllText(Path.Combine(user,"ai_chat_config.json"))=="encrypted-settings","Encrypted settings copied verbatim");
-            Check(File.Exists(Path.Combine(user,"data","calendar","2026-11-06.json.bak")),"Calendar backup migrated");
-            Check(File.Exists(Path.Combine(user,"data","calendar","history","snapshot","2026-11-06.json")),"Recovery history migrated");
+            Check(!Directory.Exists(Path.Combine(user,"data","calendar"))&&File.ReadAllText(legacyCalendar)=="legacy calendar",
+                "Retired calendar data stays in its original location");
             File.Delete(Path.Combine(user,"ai_chat_config.json"));
             PetStorage.Migrate(legacy,user);
             Check(!File.Exists(Path.Combine(user,"ai_chat_config.json")),"Deleted credentials must not be reimported");
@@ -79,7 +78,7 @@ internal static class StorageTests
                 Check((string)typeof(KeyboardPetWindow).GetField("bindingsPath",flags).GetValue(pet)==Path.Combine(user,"input_bindings.tsv"),"Bindings use separate user root");
             }
             Check(user==Path.Combine(Path.GetFullPath(legacy),"user-data"),"All persistent data must stay inside the installation");
-            Console.WriteLine("PASS: installation-local user data, non-destructive one-time migration, calendar backups and recovery history.");
+            Console.WriteLine("PASS: installation-local user data and non-destructive one-time settings migration.");
         }
         finally { if(Directory.Exists(temporary))Directory.Delete(temporary,true); }
     }

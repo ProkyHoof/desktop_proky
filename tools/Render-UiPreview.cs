@@ -9,41 +9,6 @@ using System.Windows.Forms;
 
 internal static class UiPreview
 {
-    static void CalendarPreview(string output)
-    {
-        string isolated=Path.Combine(Path.GetTempPath(),"DesktopPet.CalendarPreview."+Guid.NewGuid().ToString("N"));
-        try
-        {
-            var store=new PetCalendarStore(isolated);var today=DateTime.Today;
-            foreach(int offset in new[] {-4,-2,-1,0,2,5})
-            {
-                var date=today.AddDays(offset);var day=store.Load(date);
-                day.Plans.Add(new PetCalendarPlan {Text=offset<=0 ? "完成桌宠日历模块" : "整理本周工作与下周计划",Done=offset<0});
-                day.Plans.Add(new PetCalendarPlan {Text=offset<=0 ? "阅读 30 分钟" : "阅读与学习",Done=offset<0});
-                if(offset==0){day.Plans[0].Done=true;day.Plans.Add(new PetCalendarPlan {Text="散步，早点休息"});}
-                if(offset==0){day.Plans[0].Start="09:00";day.Plans[0].End="10:30";day.Plans[1].Start="10:00";day.Plans[1].End="11:00";}
-                if(offset<=0)day.Journal=offset==0 ? "今天完成了日历计划模块。\r\n\r\n把要做的事情列下来，完成一项就勾选一项。\r\n晚上花几分钟记录今天做过的事与收获。\r\n\r\n今天的收获：保持记录，慢慢积累。" : "完成工作与阅读，记下今天的进展。";
-                store.Save(date,day);
-            }
-            using(var calendar=new PetCalendarWindow(isolated,false,today))
-            {
-                using(var image=Render(calendar))image.Save(Path.Combine(output,"current-calendar.png"),ImageFormat.Png);
-                var normalSize=calendar.Size;calendar.Size=calendar.MinimumSize;
-                using(var image=Render(calendar))image.Save(Path.Combine(output,"current-calendar-compact.png"),ImageFormat.Png);
-                calendar.Size=normalSize;
-                calendar.SetView(CalendarView.Week);
-                using(var image=Render(calendar))image.Save(Path.Combine(output,"current-calendar-week.png"),ImageFormat.Png);
-                calendar.SetView(CalendarView.List);
-                using(var image=Render(calendar))image.Save(Path.Combine(output,"current-calendar-global.png"),ImageFormat.Png);
-            }
-        }
-        finally
-        {
-            string resolved=Path.GetFullPath(isolated),temporary=Path.GetFullPath(Path.GetTempPath());
-            if(!resolved.StartsWith(temporary,StringComparison.OrdinalIgnoreCase)||!Path.GetFileName(resolved).StartsWith("DesktopPet.CalendarPreview.",StringComparison.Ordinal))throw new InvalidOperationException("Unexpected calendar preview directory");
-            if(Directory.Exists(resolved))Directory.Delete(resolved,true);
-        }
-    }
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
     [StructLayout(LayoutKind.Sequential)] struct PrintRect { internal int Left,Top,Right,Bottom; }
     [StructLayout(LayoutKind.Sequential)] struct PrintRange
@@ -100,7 +65,7 @@ internal static class UiPreview
     }
     static void Overview(string output)
     {
-        using(var sheet=new Bitmap(1680,1180))using(var g=Graphics.FromImage(sheet))
+        using(var sheet=new Bitmap(1680,1140))using(var g=Graphics.FromImage(sheet))
         using(var title=new Font("Microsoft YaHei UI",28,FontStyle.Bold,GraphicsUnit.Pixel))
         using(var label=new Font("Microsoft YaHei UI",16,FontStyle.Bold,GraphicsUnit.Pixel))
         using(var note=new Font("Microsoft YaHei UI",13,FontStyle.Regular,GraphicsUnit.Pixel))
@@ -109,15 +74,21 @@ internal static class UiPreview
             g.Clear(KnightUi.Paper);g.InterpolationMode=System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
             g.FillRectangle(red,28,17,54,3);g.DrawString("桌宠助手 / 窗口设计",title,ink,28,29);
             g.DrawString("黑白主色 · 朱红点缀 · 统一线性图标与细边框",note,muted,29,69);
-            string[] files={"current-calendar.png","current-chat-settings.png","current-settings.png","current-chat.png","current-menu.png","current-dialog.png"};
-            string[] labels={"日历工作区","AI 接口设置","按键与鼠标设置","点击人物展开输入","桌宠菜单","提示对话框"};
-            Rectangle[] bounds={new Rectangle(28,126,1048,589),new Rectangle(1104,126,548,494),new Rectangle(28,794,320,349),new Rectangle(382,794,284,353),new Rectangle(714,794,362,358),new Rectangle(1104,726,548,327)};
+            string[] files={"current-chat-settings.png","current-settings.png","current-chat.png","current-menu.png","current-dialog.png"};
+            string[] labels={"AI 接口设置","按键与鼠标设置","点击人物展开输入","桌宠菜单","提示对话框"};
+            Rectangle[] bounds={new Rectangle(28,126,798,504),new Rectangle(854,126,798,504),
+                new Rectangle(28,686,460,382),new Rectangle(516,686,440,382),new Rectangle(984,686,668,382)};
             for(int i=0;i<files.Length;i++)
             {
-                g.DrawString(labels[i],label,ink,bounds[i].X,bounds[i].Y-30);
-                using(var source=Image.FromFile(Path.Combine(output,files[i])))g.DrawImage(source,bounds[i]);
+                Rectangle cell=bounds[i];
+                g.DrawString(labels[i],label,ink,cell.X,cell.Y-30);
+                using(var source=Image.FromFile(Path.Combine(output,files[i])))
+                {
+                    float scale=Math.Min(1f,Math.Min((float)cell.Width/source.Width,(float)cell.Height/source.Height));
+                    g.DrawImage(source,cell.X,cell.Y,source.Width*scale,source.Height*scale);
+                }
             }
-            g.DrawString("所有预览均由真实窗口与控件渲染，使用示例数据。",note,muted,1104,1080);
+            g.DrawString("所有预览均由真实窗口与控件渲染，使用示例数据。",note,muted,28,1100);
             sheet.Save(Path.Combine(output,"current-window-design.png"),ImageFormat.Png);
         }
     }
@@ -125,7 +96,6 @@ internal static class UiPreview
     {
         SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         string root=args[0],output=Path.Combine(root,"assets","previews");
-        if(args.Length>1&&args[1]=="--calendar-only"){CalendarPreview(output);return 0;}
         Directory.CreateDirectory(output);
         using(var chat=new PetChatWindow(root,true))
         using(var chatSettings=new PetChatSettingsWindow(new PetChatSettings(),Path.Combine(Path.GetTempPath(),"unused-chat-preview.json")))
@@ -164,7 +134,6 @@ internal static class UiPreview
             tabs.SelectedIndex=2;
             using(var image=Render(chatSettings))image.Save(Path.Combine(output,"current-chat-personality.png"),ImageFormat.Png);
         }
-        CalendarPreview(output);
         using(var pet=new KeyboardPetWindow(root,true))
         using(var editor=new PetBindingEditor(new PetInputBindings(),Path.Combine(Path.GetTempPath(),"unused-ui-preview.tsv")))
         using(var error=KnightUi.ErrorDialog("保存绑定失败","无法写入绑定文件，请检查文件夹是否可写，然后重试。"))
@@ -172,7 +141,7 @@ internal static class UiPreview
             var flags=BindingFlags.Instance|BindingFlags.NonPublic;
             ((Timer)typeof(KeyboardPetWindow).GetField("timer",flags).GetValue(pet)).Stop();
             var menu=(ContextMenuStrip)typeof(KeyboardPetWindow).GetField("menu",flags).GetValue(pet);
-            foreach(string label in new[] {"互动设置","桌面设置","AI 与助手","运行状态"})
+            foreach(string label in new[] {"互动设置","桌面设置","AI 与助手"})
             {
                 var group=menu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text==label);
                 using(var image=Render(group.DropDown))image.Save(Path.Combine(output,"current-menu-"+label+".png"),ImageFormat.Png);

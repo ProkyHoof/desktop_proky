@@ -121,9 +121,23 @@ internal static class PetSkinStyles
     internal const int Classic=0,Pirate=1,Cyber=3;
     internal static int Normalize(int value){return value==Pirate||value==Cyber ? value : Classic;}
     internal static Color CyberPrimary(int tone,int alpha=255)
-    {return Color.FromArgb(alpha,tone==Pirate ? Color.FromArgb(235,198,112) : Color.FromArgb(53,237,244));}
+    {return Color.FromArgb(alpha,tone==Cyber ? Color.FromArgb(53,237,244) : tone==Pirate ? Color.FromArgb(235,198,112) : Color.FromArgb(222,48,69));}
     internal static Color CyberSecondary(int tone,int alpha=255)
-    {return Color.FromArgb(alpha,tone==Pirate ? Color.FromArgb(208,81,89) : Color.FromArgb(248,86,194));}
+    {return Color.FromArgb(alpha,tone==Cyber ? Color.FromArgb(248,86,194) : tone==Pirate ? Color.FromArgb(208,81,89) : Color.FromArgb(244,244,246));}
+    // Cyber props keep their shape and transparency in the classic palette,
+    // but their blue glass and housings become neutral black/silver.
+    internal static Color CyberSurface(int tone,Color color)
+    {
+        if(Normalize(tone)!=Classic)return color;
+        int gray=(color.R*30+color.G*59+color.B*11)/100;
+        return Color.FromArgb(color.A,gray,gray,gray);
+    }
+    internal static Color MusicColor(int tone,Color color)
+    {
+        if(Normalize(tone)==Cyber)return color;
+        var accent=CyberPrimary(tone);int high=Math.Max(color.R,Math.Max(color.G,color.B)),low=Math.Min(color.R,Math.Min(color.G,color.B));
+        return Color.FromArgb(color.A,low+(high-low)*accent.R/255,low+(high-low)*accent.G/255,low+(high-low)*accent.B/255);
+    }
     internal static Color ToneColor(int tone,Color color)
     {
         // Recolor the red accents, preserving neutral metal, ink, highlights
@@ -185,6 +199,200 @@ internal static class CyberpunkArt
     {using(var path=new GraphicsPath()){path.AddLines(points);Glow(g,path,color,width);}}
 }
 
+internal static class PetClothingStyles
+{
+    internal const int Knight = 0, Captain = 1, Tactical = 2;
+    internal static int Normalize(int style) { return style >= Knight && style <= Tactical ? style : Knight; }
+
+    internal static Bitmap CreateTorso(RigSprite body, int style, int tone)
+    {
+        var bounds = body.Bounds;
+        return CreateTexture(body.Image, style, tone, false, g =>
+        {
+            g.ScaleTransform(body.Image.Width / bounds.Width, body.Image.Height / bounds.Height);
+            g.TranslateTransform(-bounds.X, -bounds.Y);
+            DrawTorso(g, style, tone);
+        });
+    }
+
+    internal static Bitmap CreateSleeve(Bitmap arm, bool left, int style, int tone)
+    {
+        return CreateTexture(arm, style, tone, true, g =>
+        {
+            g.ScaleTransform(arm.Width / 100f, arm.Height / 100f);
+            if (!left) { g.TranslateTransform(100, 0); g.ScaleTransform(-1, 1); }
+            DrawSleeve(g, style, tone);
+        });
+    }
+
+    static Bitmap CreateTexture(Bitmap source, int style, int tone, bool sleeve, Action<Graphics> decorate)
+    {
+        var area = new Rectangle(Point.Empty, source.Size);
+        var texture = source.Clone(area, PixelFormat.Format32bppPArgb);
+        try
+        {
+            using (var details = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppPArgb))
+            {
+                using (var g = Graphics.FromImage(details))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    decorate(g);
+                }
+                var pixels = texture.LockBits(area, ImageLockMode.ReadWrite, PixelFormat.Format32bppPArgb);
+                try
+                {
+                    var overlay = details.LockBits(area, ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
+                    try { Composite(pixels, overlay, source.Size, style, tone, sleeve); }
+                    finally { details.UnlockBits(overlay); }
+                }
+                finally { texture.UnlockBits(pixels); }
+            }
+            return texture;
+        }
+        catch { texture.Dispose(); throw; }
+    }
+
+    static void Composite(BitmapData fabric, BitmapData details, Size size, int style, int tone, bool sleeve)
+    {
+        var fabricRow = new int[size.Width];
+        var detailRow = new int[size.Width];
+        Color accent = PetSkinStyles.CyberPrimary(tone);
+        for (int y = 0; y < size.Height; y++)
+        {
+            IntPtr row = IntPtr.Add(fabric.Scan0, y * fabric.Stride);
+            Marshal.Copy(row, fabricRow, 0, size.Width);
+            Marshal.Copy(IntPtr.Add(details.Scan0, y * details.Stride), detailRow, 0, size.Width);
+            for (int x = 0; x < size.Width; x++)
+            {
+                uint pixel = (uint)fabricRow[x], detail = (uint)detailRow[x];
+                int alpha = (int)(pixel >> 24);
+                if (alpha == 0) continue;
+                Color original = Color.FromArgb(Math.Min(255, (int)(pixel >> 16 & 255) * 255 / alpha),
+                    Math.Min(255, (int)(pixel >> 8 & 255) * 255 / alpha), Math.Min(255, (int)(pixel & 255) * 255 / alpha));
+                Color material = FabricColor(original, y / (float)size.Height, style, tone, sleeve, accent);
+                // Keep the original alpha and blend decoration only inside its silhouette.
+                int remain = 255 - (int)(detail >> 24);
+                if (remain == 255 && material.ToArgb() == original.ToArgb()) continue;
+                int r = Premultiply(material.R, (int)(detail >> 16 & 255), remain, alpha);
+                int g = Premultiply(material.G, (int)(detail >> 8 & 255), remain, alpha);
+                int b = Premultiply(material.B, (int)(detail & 255), remain, alpha);
+                fabricRow[x] = (alpha << 24) | (r << 16) | (g << 8) | b;
+            }
+            Marshal.Copy(fabricRow, 0, row, size.Width);
+        }
+    }
+
+    static int Premultiply(int cloth, int decoration, int remain, int alpha)
+    {
+        return (Math.Min(255, cloth * remain / 255 + decoration) * alpha + 127) / 255;
+    }
+
+    static Color FabricColor(Color original, float height, int style, int tone, bool sleeve, Color accent)
+    {
+        bool scarf = original.R > original.G + 24 && original.R > original.B + 14;
+        if (style == Knight || (!sleeve && scarf) || (sleeve && height > .65f))
+            return PetSkinStyles.ToneColor(tone, original);
+
+        int light = (original.R * 30 + original.G * 59 + original.B * 11) / 100;
+        if (style == Captain)
+        {
+            if (sleeve && light > 105)
+                return Color.FromArgb(light, light * 91 / 100, light * 74 / 100);
+            return Color.FromArgb(Math.Min(255, light * 6 / 5 + light * accent.R / 280),
+                light * 57 / 100, light * 61 / 100);
+        }
+        float shade = sleeve && light > 92 ? .42f : .83f;
+        int baseShade = (int)(light * shade);
+        return Color.FromArgb(baseShade, Math.Min(255, baseShade + light * accent.G / 950),
+            Math.Min(255, baseShade + light * accent.B / 800));
+    }
+
+    static void DrawTorso(Graphics g, int style, int tone)
+    {
+        Color accent = PetSkinStyles.CyberPrimary(tone);
+        if (style == Knight)
+        {
+            Stroke(g, Color.FromArgb(176, 183, 193), 1.5f, 119, 173, 134, 185, 152, 192, 173, 183, 185, 174);
+            Mark(g, Color.FromArgb(35, 32, 39), 145, 177, 158, 177, 158, 184, 151.5f, 190, 145, 184);
+            Mark(g, Color.FromArgb(237, 239, 241), 147, 179, 156, 179, 156, 183.5f, 151.5f, 187.5f, 147, 183.5f);
+            Stroke(g, accent, 1.5f, 151.5f, 180, 151.5f, 185.5f);
+            return;
+        }
+        if (style == Captain)
+        {
+            Color trim = tone == PetSkinStyles.Pirate ? Color.FromArgb(251, 211, 123) : accent;
+            Mark(g, Color.FromArgb(83, 31, 40), 114, 168, 133, 180, 139, 190, 129, 204, 127, 186);
+            Mark(g, Color.FromArgb(83, 31, 40), 191, 168, 173, 177, 163, 190, 172, 204, 177, 183);
+            Stroke(g, trim, 2.1f, 115, 169, 133, 181, 138, 190, 130, 201);
+            Stroke(g, trim, 2.1f, 190, 169, 173, 178, 163, 190, 171, 201);
+            Stroke(g, Color.FromArgb(42, 28, 25), 5.8f, 164, 174, 155, 185, 146, 197);
+            Stroke(g, trim, .85f, 163, 175, 154, 185, 145, 196);
+            using (var button = new SolidBrush(trim))
+            {
+                g.FillEllipse(button, 147, 179, 7, 7);
+                g.FillEllipse(button, 140, 192, 3, 3);
+                g.FillEllipse(button, 159, 192, 3, 3);
+            }
+            return;
+        }
+        Mark(g, Color.FromArgb(26, 29, 41), 113, 168, 130, 169, 143, 177, 160, 177, 171, 170, 191, 167,
+            183, 186, 169, 197, 135, 197, 121, 186);
+        Stroke(g, Color.FromArgb(93, 102, 120), 2.4f, 118, 171, 130, 173, 142, 181, 161, 181, 174, 172, 187, 171);
+        Stroke(g, accent, 2, 125, 178, 139, 188, 151, 188, 158, 184, 169, 184, 178, 177);
+        Stroke(g, PetSkinStyles.CyberSecondary(tone), 1.7f, 142, 192, 150, 192, 154, 189);
+        Mark(g, accent, 157, 189, 163, 189, 161, 193, 155, 193);
+    }
+
+    static void DrawSleeve(Graphics g, int style, int tone)
+    {
+        Color accent = PetSkinStyles.CyberPrimary(tone);
+        if (style == Knight)
+        {
+            Stroke(g, Color.FromArgb(180, 187, 197), 2.6f, 30, 10, 43, 7, 56, 10, 74, 17);
+            Stroke(g, accent, 3, 29, 14, 43, 11, 56, 14, 73, 21);
+            Stroke(g, Color.FromArgb(180, 187, 197), 2.2f, 26, 48, 41, 44, 54, 44, 67, 48);
+            return;
+        }
+        if (style == Captain)
+        {
+            Mark(g, Color.FromArgb(88, 35, 43), 23, 9, 45, 4, 61, 9, 80, 18, 68, 24, 47, 17, 26, 18);
+            Stroke(g, accent, 3.6f, 24, 14, 43, 9, 57, 12, 73, 20);
+            for (int x = 35; x <= 65; x += 6)
+            {
+                float y = 12 + Math.Max(0, x - 42) * .3f;
+                Stroke(g, accent, 2.6f, x, y, x - 2, y + 6);
+            }
+            Mark(g, Color.FromArgb(87, 35, 38), 17, 49, 36, 43, 56, 44, 74, 51, 68, 58, 48, 52, 26, 55);
+            Stroke(g, accent, 2.7f, 23, 51, 39, 46, 55, 47, 70, 53);
+            return;
+        }
+        Mark(g, Color.FromArgb(22, 24, 34), 26, 15, 46, 13, 72, 22, 70, 42, 56, 51, 40, 47, 20, 50, 24, 39);
+        Mark(g, Color.FromArgb(72, 79, 96), 31, 18, 45, 17, 65, 24, 63, 39, 54, 45, 42, 42, 27, 45, 30, 36);
+        Stroke(g, Color.FromArgb(109, 119, 138), 2.3f, 30, 23, 45, 20, 61, 26, 59, 35);
+        Stroke(g, accent, 2.9f, 35, 23, 49, 26, 49, 35, 57, 39, 53, 45, 39, 42, 27, 45);
+        Stroke(g, PetSkinStyles.CyberSecondary(tone), 2.5f, 33, 50, 45, 47, 57, 50);
+        for (int x = 40; x <= 52; x += 6) Stroke(g, accent, 2.4f, x, 56, x + 2, 59);
+    }
+
+    static PointF[] Points(float[] coordinates)
+    {
+        var points = new PointF[coordinates.Length / 2];
+        for (int i = 0; i < points.Length; i++) points[i] = new PointF(coordinates[2 * i], coordinates[2 * i + 1]);
+        return points;
+    }
+
+    static void Stroke(Graphics g, Color color, float width, params float[] coordinates)
+    {
+        using (var pen = new Pen(color, width) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawLines(pen, Points(coordinates));
+    }
+
+    static void Mark(Graphics g, Color color, params float[] coordinates)
+    {
+        using (var brush = new SolidBrush(color)) g.FillPolygon(brush, Points(coordinates));
+    }
+}
+
 internal sealed class LayeredRigAssets : IDisposable
 {
     internal readonly Dictionary<string,RigSprite> Parts=new Dictionary<string,RigSprite>();
@@ -218,7 +426,7 @@ internal sealed class LayeredRigAssets : IDisposable
         foreach(var pair in Parts)
         {
             string name=pair.Key;
-            if(name=="face"||name=="cheeks"||name.StartsWith("mouth"))continue;
+            if(name=="body"||name=="face"||name=="cheeks"||name.StartsWith("mouth"))continue;
             pair.Value.SetTone(value);
         }
         ReferenceHairCap.SetTone(value);ReferenceBackLeft.SetTone(value);ReferenceBackRight.SetTone(value);
@@ -319,6 +527,7 @@ internal sealed class LivingPetPortrait : IDisposable
     const int Width=300,Height=229;
     internal const int Padding=28;
     readonly Bitmap image=new Bitmap(Width+Padding*2,Height+Padding*2,PixelFormat.Format32bppPArgb);
+    Bitmap torsoTexture;
     internal Bitmap Image { get { EnsureImage();return image; } }
     bool imageDirty=true;
     Matrix headPose,bodyPose;
@@ -326,6 +535,18 @@ internal sealed class LivingPetPortrait : IDisposable
     bool hitPixelsDirty=true;
     internal readonly LayeredRigAssets Rig;
     internal int HairStyle { get; private set; }
+    internal int ClothingStyle { get; private set; }
+    internal void SetClothingStyle(int value)
+    {
+        if (value == ClothingStyle) return;
+        ClothingStyle = value;
+        InvalidateTorsoTexture();
+    }
+    void InvalidateTorsoTexture()
+    {
+        if (torsoTexture != null) { torsoTexture.Dispose(); torsoTexture = null; }
+        imageDirty = true;
+    }
     internal int HeadwearStyle { get; private set; }
     internal void SetHeadwearStyle(int value)
     {
@@ -344,7 +565,7 @@ internal sealed class LivingPetPortrait : IDisposable
     internal void SetTone(int value)
     {
         if(value==tone)return;
-        Rig.SetTone(value);tone=value;imageDirty=true;
+        Rig.SetTone(value);tone=value;InvalidateTorsoTexture();
     }
     internal RigSprite HairCap { get { return HairStyle==PetHairStyles.Reference ? Rig.ReferenceHairCap : Rig.Parts["hair-cap"]; } }
     internal void SetHairStyle(int value)
@@ -494,7 +715,9 @@ internal sealed class LivingPetPortrait : IDisposable
         {cloth.CloseFigure();g.FillPath(fill,cloth);}
         var clipped=g.Save();
         g.SetClip(torsoSilhouette,CombineMode.Intersect);
-        Rig.Parts["body"].Draw(g);
+        var body = Rig.Parts["body"];
+        if (torsoTexture == null) torsoTexture = PetClothingStyles.CreateTorso(body, ClothingStyle, tone);
+        g.DrawImage(torsoTexture, body.Bounds, new RectangleF(PointF.Empty, torsoTexture.Size), GraphicsUnit.Pixel);
         g.Restore(clipped);
         using(var ink=new Pen(Color.FromArgb(27,25,32),.8f))
         {ink.StartCap=ink.EndCap=LineCap.Round;g.DrawPath(ink,lowerTorsoEdge);}
@@ -831,27 +1054,27 @@ internal sealed class LivingPetPortrait : IDisposable
             float x=side==0 ? 67 : 237,y=129+(side==0 ? 0 : 3);
             Color primary=PetSkinStyles.CyberPrimary(tone,alpha),secondary=PetSkinStyles.CyberSecondary(tone,alpha);
             using(var mount=CyberpunkArt.Panel(new RectangleF(x-13,y-21,26,43),5))
-            using(var shell=new LinearGradientBrush(new RectangleF(x-13,y-21,26,43),Color.FromArgb(alpha,69,77,98),Color.FromArgb(alpha,19,25,42),25f))
-            using(var ink=new Pen(Color.FromArgb(alpha,12,17,29),2))
+            using(var shell=new LinearGradientBrush(new RectangleF(x-13,y-21,26,43),PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,69,77,98)),PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,19,25,42)),25f))
+            using(var ink=new Pen(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,12,17,29)),2))
             {
                 g.FillPath(shell,mount);g.DrawPath(ink,mount);
                 var edge=g.Save();g.SetClip(mount,CombineMode.Intersect);
                 using(var seam=new Pen(primary,1.5f))g.DrawLine(seam,x-10,y-12,x-10,y+11);
-                using(var vent=new Pen(Color.FromArgb(alpha,113,126,149),1))
+                using(var vent=new Pen(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,113,126,149)),1))
                     for(int i=0;i<3;i++)g.DrawLine(vent,x+5,y-13+i*3,x+9,y-15+i*3);
                 g.Restore(edge);
             }
             using(var driver=CyberpunkArt.Panel(new RectangleF(x-8,y-10,16,22),4))
-            using(var dark=new SolidBrush(Color.FromArgb(alpha,12,22,37)))
+            using(var dark=new SolidBrush(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,12,22,37))))
             {g.FillPath(dark,driver);CyberpunkArt.Glow(g,driver,primary,1.1f);}
             float beat=musicEnergy*(float)(.5+.5*Math.Sin(time*5.2+side));
             using(var ring=new Pen(secondary,1.8f))g.DrawArc(ring,x-5,y-6,10,13,-90+(float)time*30,240);
-            using(var core=new SolidBrush(Color.FromArgb(alpha,216,255,255)))g.FillEllipse(core,x-1.5f,y-1,3,3);
+            using(var core=new SolidBrush(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,216,255,255))))g.FillEllipse(core,x-1.5f,y-1,3,3);
             for(int i=0;i<3;i++)
             using(var led=new Pen(i==1 ? secondary : primary,1.2f))
                 g.DrawLine(led,x-4+i*4,y+16,x-4+i*4,y+13-beat*(3+i));
             using(var fin=CyberpunkArt.Panel(new RectangleF(x-7,y-29,14,8),2))
-            using(var dark=new SolidBrush(Color.FromArgb(alpha,29,38,59)))
+            using(var dark=new SolidBrush(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,29,38,59))))
             using(var edge=new Pen(primary,1)) {g.FillPath(dark,fin);g.DrawPath(edge,fin);}
         }
         // Packet-like squares replace musical notes, following the same head.
@@ -1030,17 +1253,17 @@ internal sealed class LivingPetPortrait : IDisposable
         // mouth below it, with audio modules mounted farther down the ears.
         Color cyan=PetSkinStyles.CyberPrimary(tone,alpha),pink=PetSkinStyles.CyberSecondary(tone,alpha);
         using(var bridge=CyberpunkArt.Panel(new RectangleF(72,69,162,18),5))
-        using(var fill=new LinearGradientBrush(new RectangleF(72,69,162,18),Color.FromArgb(alpha,73,80,104),Color.FromArgb(alpha,23,29,47),90f))
-        using(var ink=new Pen(Color.FromArgb(alpha,13,19,32),1.9f))
+        using(var fill=new LinearGradientBrush(new RectangleF(72,69,162,18),PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,73,80,104)),PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,23,29,47)),90f))
+        using(var ink=new Pen(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,13,19,32)),1.9f))
         {g.FillPath(fill,bridge);g.DrawPath(ink,bridge);}
         using(var lens=new GraphicsPath())
         {
             lens.AddPolygon(new[]{new PointF(79,80),new PointF(123,79),new PointF(138,87),new PointF(167,87),new PointF(180,79),
                 new PointF(227,82),new PointF(222,104),new PointF(178,109),new PointF(166,102),new PointF(138,102),new PointF(126,109),new PointF(83,105)});
-            using(var glass=new LinearGradientBrush(new RectangleF(79,79,148,30),Color.FromArgb((int)(alpha*.75f),17,51,72),Color.FromArgb((int)(alpha*.35f),36,120,149),90f))g.FillPath(glass,lens);
+            using(var glass=new LinearGradientBrush(new RectangleF(79,79,148,30),PetSkinStyles.CyberSurface(tone,Color.FromArgb((int)(alpha*.75f),17,51,72)),PetSkinStyles.CyberSurface(tone,Color.FromArgb((int)(alpha*.35f),36,120,149)),90f))g.FillPath(glass,lens);
             CyberpunkArt.Glow(g,lens,cyan,1.5f);
             var clipped=g.Save();g.SetClip(lens,CombineMode.Intersect);
-            using(var reflection=new Pen(Color.FromArgb(alpha/3,205,255,255),3))
+            using(var reflection=new Pen(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha/3,205,255,255)),3))
             {g.DrawLine(reflection,95,79,85,109);g.DrawLine(reflection,104,79,94,109);g.DrawLine(reflection,208,79,198,109);}
             using(var scan=new Pen(PetSkinStyles.CyberPrimary(tone,alpha/3),.65f))
                 for(int i=0;i<5;i++)g.DrawLine(scan,82,84+i*5,224,84+i*5);
@@ -1050,15 +1273,15 @@ internal sealed class LivingPetPortrait : IDisposable
         }
         foreach(float x in new[]{68f,227f})
         using(var hub=CyberpunkArt.Panel(new RectangleF(x,77,13,31),3))
-        using(var black=new SolidBrush(Color.FromArgb(alpha,27,33,51)))
-        using(var edge=new Pen(Color.FromArgb(alpha,9,15,26),1.5f))
+        using(var black=new SolidBrush(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,27,33,51))))
+        using(var edge=new Pen(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,9,15,26)),1.5f))
         {
             g.FillPath(black,hub);g.DrawPath(edge,hub);
             using(var led=new Pen(x<100 ? pink : cyan,2))g.DrawLine(led,x+6,84,x+6,100);
         }
         CyberpunkArt.Trace(g,pink,1.7f,new PointF(89,73),new PointF(121,73),new PointF(129,78));
         CyberpunkArt.Trace(g,cyan,1.2f,new PointF(177,74),new PointF(184,71),new PointF(213,71));
-        using(var caution=new Pen(Color.FromArgb(alpha,248,213,105),1.7f))
+        using(var caution=new Pen(PetSkinStyles.CyberSurface(tone,Color.FromArgb(alpha,248,213,105)),1.7f))
             for(int i=0;i<3;i++)g.DrawLine(caution,145+i*5,73,142+i*5,78);
         g.Restore(saved);
     }
@@ -1318,7 +1541,7 @@ internal sealed class LivingPetPortrait : IDisposable
         g.TranslateTransform(r.X,r.Y);g.ScaleTransform(r.Width/Width,r.Height/Height);
         DrawLayers(g,includeBackHair);g.Restore(saved);
     }
-    public void Dispose(){image.Dispose();torsoSilhouette.Dispose();lowerTorsoEdge.Dispose();if(headPose!=null)headPose.Dispose();if(bodyPose!=null)bodyPose.Dispose();}
+    public void Dispose(){image.Dispose();if(torsoTexture!=null)torsoTexture.Dispose();torsoSilhouette.Dispose();lowerTorsoEdge.Dispose();if(headPose!=null)headPose.Dispose();if(bodyPose!=null)bodyPose.Dispose();}
 }
 
 internal static class LayeredRigChecks

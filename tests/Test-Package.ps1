@@ -1,4 +1,4 @@
-﻿param([string]$Version = '1.3.0', [switch]$SkipUi)
+﻿param([string]$Version = '1.4.0', [switch]$SkipUi)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $temporary = Join-Path ([IO.Path]::GetFullPath($env:TEMP)) ('DesktopPet-package-test-' + [Guid]::NewGuid().ToString('N'))
@@ -25,7 +25,12 @@ try {
     $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $extracted 'DesktopPet.zip'))
     try {
         foreach ($entry in $zip.Entries) {
-            Check ($entry.FullName -notmatch '(?i)(ai_chat_config|keyboard_pet_config|input_bindings|user-data|data[/\\]calendar|previews|\.bak$)') ('Private or development file included: ' + $entry.FullName)
+            Check ($entry.FullName -notmatch '(?i)(ai_chat_config|keyboard_pet_config|input_bindings|user-data|data[/\\](calendar|typing)|previews|\.bak$)') ('Private or development file included: ' + $entry.FullName)
+        }
+        $posters = @($zip.Entries | Where-Object { $_.FullName.Replace('\','/') -like 'assets/keyboard-knight/apparitions/*' })
+        Check ($posters.Count -eq 3) 'Expected exactly three runtime apparition posters.'
+        foreach ($name in @('knight.png','pirate.png','gundam.png')) {
+            Check (@($posters | Where-Object { $_.Name -eq $name -and $_.Length -gt 0 }).Count -eq 1) ('Missing poster: ' + $name)
         }
         [IO.Compression.ZipFileExtensions]::ExtractToDirectory($zip,(Join-Path $temporary 'payload'))
     } finally { $zip.Dispose() }
@@ -57,12 +62,17 @@ try {
         } finally { $form.Dispose() }
         Write-Output 'PASS: interactive directory-selection dialog and desktop-shortcut default.'
     }
-    [void][IO.Directory]::CreateDirectory((Join-Path $legacy 'data/calendar/history/snapshot'))
+    [void][IO.Directory]::CreateDirectory((Join-Path $legacy 'data/calendar'))
+    [void][IO.Directory]::CreateDirectory((Join-Path $legacy 'data/typing'))
     [IO.File]::WriteAllText((Join-Path $legacy 'keyboard_pet_config.json'),'{"size":252}')
     [IO.File]::WriteAllText((Join-Path $legacy 'ai_chat_config.json'),'{"protectedApiKey":"fixture-only"}')
-    [IO.File]::WriteAllText((Join-Path $legacy 'data/calendar/2026-11-06.json'),'calendar-fixture')
-    [IO.File]::WriteAllText((Join-Path $legacy 'data/calendar/2026-11-06.json.bak'),'backup-fixture')
-    [IO.File]::WriteAllText((Join-Path $legacy 'data/calendar/history/snapshot/2026-11-06.json'),'history-fixture')
+    $oldRecords = @{
+        'data/calendar/2026-11-06.json' = 'calendar-fixture'
+        'data/typing/counts.json' = 'typing-fixture'
+    }
+    foreach ($relative in $oldRecords.Keys) {
+        [IO.File]::WriteAllText((Join-Path $legacy $relative),$oldRecords[$relative])
+    }
     $installer = Join-Path $extracted 'Install.ps1'
     $installArgs = '-Silent -NoRegistration -InstallRoot "' + $installed + '"'
     Run-PackageScript $installer ($installArgs + ' -ImportLegacyData -LegacyDataRoot "' + $legacy + '"')
@@ -71,15 +81,25 @@ try {
     $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $writeRules = @((Get-Acl -LiteralPath $data).Access | Where-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -eq $currentSid -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Modify) -eq [Security.AccessControl.FileSystemRights]::Modify })
     Check ($writeRules.Count -gt 0) 'Installing user needs write access to personal data.'
-    foreach ($file in Get-ChildItem -LiteralPath $legacy -Recurse -File) {
+    foreach ($file in Get-ChildItem -LiteralPath $legacy -File) {
         $relative = $file.FullName.Substring($legacy.Length + 1)
         Check ((Get-FileHash -LiteralPath $file.FullName).Hash -eq (Get-FileHash -LiteralPath (Join-Path $data $relative)).Hash) 'Legacy import changed a personal file.'
+    }
+    foreach ($relative in $oldRecords.Keys) {
+        Check ([IO.File]::ReadAllText((Join-Path $legacy $relative)) -eq $oldRecords[$relative]) 'Legacy import modified a retired record.'
+        $saved = Join-Path $data $relative
+        Check (-not (Test-Path -LiteralPath $saved)) 'Legacy import copied a retired record.'
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $saved))
+        [IO.File]::WriteAllText($saved,$oldRecords[$relative])
     }
     [IO.File]::WriteAllText((Join-Path $data 'keyboard_pet_config.json'),'{"size":420}')
     [IO.File]::WriteAllText((Join-Path $installed 'unrelated.txt'),'Must survive uninstall')
     Run-PackageScript $installer $installArgs
     Write-Output 'PASS: upgrade completed.'
     Check ([IO.File]::ReadAllText((Join-Path $data 'keyboard_pet_config.json')) -eq '{"size":420}') 'Upgrade overwrote user preferences.'
+    foreach ($relative in $oldRecords.Keys) {
+        Check ([IO.File]::ReadAllText((Join-Path $data $relative)) -eq $oldRecords[$relative]) 'Upgrade modified an existing retired record.'
+    }
     $snapshots = @{}
     foreach ($file in Get-ChildItem -LiteralPath $data -Recurse -File -Force) { $snapshots[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName).Hash }
     $links = @((Join-Path $temporary 'shortcuts/Desktop.lnk'),(Join-Path $temporary 'shortcuts/Start.lnk'))

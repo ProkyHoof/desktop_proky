@@ -1,4 +1,4 @@
-﻿param([string]$Version = '1.3.0')
+﻿param([string]$Version = '1.4.0')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use a numeric major.minor.patch version.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -14,6 +14,11 @@ $completed = $false
 try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'DesktopPet.exe') -Destination $payload
     Copy-Item -LiteralPath (Join-Path $projectRoot 'assets/keyboard-knight/soft-style-arms.png') -Destination (Join-Path $payload 'assets/keyboard-knight')
+    $posterTarget = Join-Path $payload 'assets/keyboard-knight/apparitions'
+    [void][IO.Directory]::CreateDirectory($posterTarget)
+    foreach ($poster in @('knight.png', 'pirate.png', 'gundam.png')) {
+        Copy-Item -LiteralPath (Join-Path $projectRoot "assets/keyboard-knight/apparitions/$poster") -Destination $posterTarget
+    }
     $rigSource = Join-Path $projectRoot 'assets/keyboard-knight/rig'
     $files = @('layers.tsv','hair-cap.png','hair-back-left.png','hair-back-right.png')
     foreach ($line in Get-Content -LiteralPath (Join-Path $rigSource 'layers.tsv')) {

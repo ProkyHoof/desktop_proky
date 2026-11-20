@@ -15,8 +15,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("桌宠助手")]
 [assembly: System.Reflection.AssemblyProduct("桌宠助手")]
 [assembly: System.Reflection.AssemblyDescription("桌宠助手")]
-[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.4.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.4.0.0")]
 
 internal static class PetStorage
 {
@@ -32,11 +32,6 @@ internal static class PetStorage
         if (File.Exists(marker)) return;
         foreach (string name in new[] { "keyboard_pet_config.json", "input_bindings.tsv", "ai_chat_config.json", "ai_chat_config.json.bak" })
             CopyMissing(Path.Combine(legacyRoot, name), Path.Combine(userRoot, name));
-        string calendar = Path.Combine(legacyRoot, "data", "calendar");
-        if (Directory.Exists(calendar))
-            foreach (string source in Directory.GetFiles(calendar, "*", SearchOption.AllDirectories))
-                if (source.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".json.bak", StringComparison.OrdinalIgnoreCase))
-                    CopyMissing(source, Path.Combine(userRoot, "data", "calendar", source.Substring(calendar.Length + 1)));
         File.WriteAllText(marker, "Legacy import completed. Existing user files were preserved.");
     }
     static void CopyMissing(string source, string target)
@@ -155,10 +150,12 @@ internal sealed class LayeredSurface : IDisposable
 
 internal sealed class KeyboardPetSprites : IDisposable
 {
+    internal readonly string ApparitionDirectory;
     internal LayeredRigAssets Rig;
     internal WholeArmSprite[] Arms = new WholeArmSprite[0];
     public KeyboardPetSprites(string root)
     {
+        ApparitionDirectory = PetApparitions.DirectoryAt(root);
         try
         {
             Arms=WholeArmSprite.LoadPair(root);
@@ -175,6 +172,7 @@ internal sealed class KeyboardPetSprites : IDisposable
 
 internal sealed class KeyboardPetWindow : Form
 {
+    const double RestDelaySeconds = 4;
     [DllImport("user32.dll", SetLastError = true)]
     static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
@@ -190,9 +188,6 @@ internal sealed class KeyboardPetWindow : Form
     readonly Stopwatch clock = Stopwatch.StartNew();
     readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
     readonly PetContextMenu menu = new PetContextMenu();
-    readonly ToolStripMenuItem status = new ToolStripMenuItem("输入监听准备中") { Enabled = false, Tag = PetContextMenu.Glyph.Status };
-    readonly ToolStripMenuItem musicStatus = new ToolStripMenuItem("音乐：等待声音播放") { Enabled = false, Tag = PetContextMenu.Glyph.Status };
-    readonly ToolStripMenuItem restItem = new ToolStripMenuItem("闭眼休息") { CheckOnClick = true, Tag = PetContextMenu.Glyph.Toggle };
     readonly EventWaitHandle shutdown;
     KeyboardPetSprites sprites;
     internal BoundPetScene scene;
@@ -201,18 +196,14 @@ internal sealed class KeyboardPetWindow : Form
     Point pressCursor, pressLocation, lastLocation;
     int spriteWidth = 336;
     int hairStyle = PetHairStyles.Reference;
-    int keyboardStyle,mouseStyle,padStyle,headwearStyle,skinPalette,musicStyle,listeningStyle,ornamentStyle;
+    int keyboardStyle,mouseStyle,padStyle,headwearStyle,skinPalette,musicStyle,listeningStyle,apparitionStyle,clothingStyle;
     PetWardrobeWindow wardrobeWindow;
     bool bubbleKeys;
-    PetCalendarWindow calendarWindow;
     PetChatWindow chatWindow;
     bool closeAfterChat;
     PetAssistantWindow assistantWindow;
-    readonly TypingStatistics typingStatistics;
-    TypingStatisticsWindow typingStatisticsWindow;
-    double nextTypingSave;
     readonly PetSpeechBubble speechBubble = new PetSpeechBubble();
-    double previous, nextReconcile, nextTopMostRefresh;
+    double previous, nextReconcile, nextTopMostRefresh, lastActivity, apparitionSince;
     float SceneScale { get { return spriteWidth / 336f; } }
     internal Rectangle SpriteBounds
     {
@@ -230,8 +221,6 @@ internal sealed class KeyboardPetWindow : Form
         bindings = PetInputBindings.Load(bindingsPath);
         inputState.MouseGain = bindings.MouseGain;
         input = new GlobalInputFeedback(inputState, () => clock.Elapsed.TotalSeconds);
-        typingStatistics = new TypingStatistics(this.dataRoot, preview);
-        inputState.TypingPressed += typingStatistics.Record;
         configPath = Path.Combine(this.dataRoot, "keyboard_pet_config.json");
         shutdown = new EventWaitHandle(false, EventResetMode.ManualReset, preview ? null : Program.ExitEventName);
         shutdown.Reset();
@@ -254,7 +243,8 @@ internal sealed class KeyboardPetWindow : Form
         skinPalette=PetSkinStyles.Normalize(ReadInt(config,"skinPalette",0));
         musicStyle=PetMusicStyles.Normalize(ReadInt(config,"musicStyle",0));
         listeningStyle=PetListeningStyles.Normalize(ReadInt(config,"listeningStyle",0));
-        ornamentStyle=PetDeskOrnaments.Normalize(ReadInt(config,"deskOrnament",0));
+        apparitionStyle=PetApparitions.Normalize(ReadInt(config,"deskOrnament",0));
+        clothingStyle=PetClothingStyles.Normalize(ReadInt(config,"clothingStyle",PetClothingStyles.Knight));
         bubbleKeys = ReadInt(config, "bubbleKeys", 0) == 1;
         SetSpriteSize(spriteWidth);
         Rectangle work = Screen.PrimaryScreen.WorkingArea;
@@ -263,16 +253,12 @@ internal sealed class KeyboardPetWindow : Form
         var interactionMenu = new ToolStripMenuItem("互动设置") { Tag = PetContextMenu.Glyph.Keys };
         var desktopMenu = new ToolStripMenuItem("桌面设置") { Tag = PetContextMenu.Glyph.Settings };
         var assistantMenu = new ToolStripMenuItem("AI 与助手") { Tag = PetContextMenu.Glyph.Settings };
-        var stateMenu = new ToolStripMenuItem("运行状态") { Tag = PetContextMenu.Glyph.Settings };
         menu.Items.Add("皮肤…", null, (s, e) => OpenWardrobe()).Tag = PetContextMenu.Glyph.Hair;
-        menu.Items.Add("日历计划…", null, (s, e) => OpenCalendar()).Tag = PetContextMenu.Glyph.Settings;
-        menu.Items.Add("打字统计…", null, (s, e) => OpenTypingStatistics()).Tag = PetContextMenu.Glyph.Keys;
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.AddRange(new ToolStripItem[] { interactionMenu, desktopMenu, assistantMenu });
         var followItem = new ToolStripMenuItem("跟随键鼠动作") { Checked = follow, CheckOnClick = true, Tag = PetContextMenu.Glyph.Toggle };
         followItem.CheckedChanged += (s, e) => { follow = followItem.Checked; UpdateInputSubscription(); };
         interactionMenu.DropDownItems.Add(followItem);
-        restItem.CheckedChanged += (s, e) => { resting = restItem.Checked; UpdateInputSubscription(); };
         var musicItem = new ToolStripMenuItem("随音乐律动") { Checked = followMusic, CheckOnClick = true, Tag = PetContextMenu.Glyph.Toggle };
         musicItem.CheckedChanged += (s, e) => { followMusic = musicItem.Checked; SaveConfig(); };
         interactionMenu.DropDownItems.Add(musicItem);
@@ -342,10 +328,7 @@ internal sealed class KeyboardPetWindow : Form
             Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
             Location = new Point(area.Right - Width, area.Bottom - Height - 12); KeepVisible();
         }).Tag = PetContextMenu.Glyph.Corner;
-        stateMenu.DropDownItems.AddRange(new ToolStripItem[] { status, musicStatus });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(restItem);
-        menu.Items.Add(stateMenu);
         menu.Items.Add("退出", null, (s, e) => Close()).Tag = PetContextMenu.Glyph.Exit;
         menu.ApplyTheme();
         timer.Interval = 66; timer.Tick += Tick; timer.Start();
@@ -379,7 +362,8 @@ internal sealed class KeyboardPetWindow : Form
         if (sprites != null) sprites.Dispose();
         sprites = replacement; scene = replacementScene; spriteWidth = width;
         scene.Portrait.SetHairStyle(hairStyle);
-        scene.SetKeyboardStyle(keyboardStyle);scene.SetMouseStyle(mouseStyle);scene.SetPadStyle(padStyle);scene.Portrait.SetHeadwearStyle(headwearStyle);scene.SetTone(skinPalette);scene.SetMusicStyle(musicStyle);scene.Portrait.SetListeningStyle(listeningStyle);scene.SetOrnamentStyle(ornamentStyle);
+        scene.SetKeyboardStyle(keyboardStyle);scene.SetMouseStyle(mouseStyle);scene.SetPadStyle(padStyle);scene.Portrait.SetHeadwearStyle(headwearStyle);scene.SetTone(skinPalette);scene.SetMusicStyle(musicStyle);scene.Portrait.SetListeningStyle(listeningStyle);scene.SetApparitionStyle(apparitionStyle, apparitionSince);
+        scene.SetClothingStyle(clothingStyle);
         inputState.SetBubbleMode(bubbleKeys);
         scene.SetViewWidth(BoundPetScene.CompactWidth);
         Size = new Size((int)Math.Round(scene.ViewWidth * SceneScale), (int)Math.Round(BoundPetScene.WorldHeight * SceneScale));
@@ -441,53 +425,32 @@ internal sealed class KeyboardPetWindow : Form
         chatWindow.TopMost = TopMost;
         chatWindow.PlaceBeside(Bounds, Screen.FromRectangle(Bounds).WorkingArea);
     }
-    void OpenCalendar()
-    {
-        if (calendarWindow != null && !calendarWindow.IsDisposed)
-        {
-            if (calendarWindow.WindowState == FormWindowState.Minimized) calendarWindow.WindowState = FormWindowState.Normal;
-            calendarWindow.Show(); calendarWindow.Activate(); return;
-        }
-        var calendar = new PetCalendarWindow(dataRoot, preview);
-        calendarWindow = calendar;
-        calendar.FormClosed += (s, e) =>
-        {
-            if (calendarWindow == calendar) calendarWindow = null;
-            if (!released && !Disposing && !IsDisposed) UpdateInputSubscription();
-        };
-        UpdateInputSubscription();
-        try
-        {
-            // A separate, modeless window leaves the pet enabled and draggable.
-            // It also avoids inheriting the pet's always-on-top window group.
-            calendar.Show();
-        }
-        catch
-        {
-            calendarWindow = null; calendar.Dispose(); UpdateInputSubscription(); throw;
-        }
-    }
     void OpenWardrobe()
     {
         if(wardrobeWindow==null||wardrobeWindow.IsDisposed)
         {
-            var window=new PetWardrobeWindow(root,hairStyle,keyboardStyle,mouseStyle,padStyle,headwearStyle,skinPalette,musicStyle,listeningStyle,ornamentStyle,ApplyWardrobeWithOrnament,preview);wardrobeWindow=window;
+            var window=new PetWardrobeWindow(root,hairStyle,keyboardStyle,mouseStyle,padStyle,headwearStyle,skinPalette,musicStyle,listeningStyle,apparitionStyle,clothingStyle,ApplyAppearance,preview);wardrobeWindow=window;
             window.FormClosed+=(s,e)=>{if(wardrobeWindow==window)wardrobeWindow=null;};
         }
         if(wardrobeWindow.WindowState==FormWindowState.Minimized)wardrobeWindow.WindowState=FormWindowState.Normal;
         wardrobeWindow.Show();wardrobeWindow.Activate();
     }
     void ApplyWardrobe(int nextHair,int nextKeyboard,int nextMouse,int nextPad,int nextHeadwear,int nextPalette,int nextMusic,int nextListening)
-    {ApplyWardrobeWithOrnament(nextHair,nextKeyboard,nextMouse,nextPad,nextHeadwear,nextPalette,nextMusic,nextListening,ornamentStyle);}
-    void ApplyWardrobeWithOrnament(int nextHair,int nextKeyboard,int nextMouse,int nextPad,int nextHeadwear,int nextPalette,int nextMusic,int nextListening,int nextOrnament)
+    {ApplyAppearance(nextHair,nextKeyboard,nextMouse,nextPad,nextHeadwear,nextPalette,nextMusic,nextListening,apparitionStyle,clothingStyle);}
+    void ApplyAppearance(int nextHair,int nextKeyboard,int nextMouse,int nextPad,int nextHeadwear,int nextPalette,int nextMusic,int nextListening,int nextApparition,int nextClothing)
     {
-        int oldHair=hairStyle,oldKeyboard=keyboardStyle,oldMouse=mouseStyle,oldPad=padStyle,oldHeadwear=headwearStyle,oldPalette=skinPalette,oldMusic=musicStyle,oldListening=listeningStyle,oldOrnament=ornamentStyle;
+        int oldHair=hairStyle,oldKeyboard=keyboardStyle,oldMouse=mouseStyle,oldPad=padStyle,oldHeadwear=headwearStyle,oldPalette=skinPalette,oldMusic=musicStyle,oldListening=listeningStyle,oldApparition=apparitionStyle;
+        int oldClothing = clothingStyle;
         hairStyle=PetHairStyles.Normalize(nextHair);keyboardStyle=PetKeyboardStyles.Normalize(nextKeyboard);mouseStyle=PetMouseStyles.Normalize(nextMouse);padStyle=PetPadStyles.Normalize(nextPad);headwearStyle=PetHeadwearStyles.Normalize(nextHeadwear);
         skinPalette=PetSkinStyles.Normalize(nextPalette);musicStyle=PetMusicStyles.Normalize(nextMusic);listeningStyle=PetListeningStyles.Normalize(nextListening);
-        ornamentStyle=PetDeskOrnaments.Normalize(nextOrnament);
+        apparitionStyle=PetApparitions.Normalize(nextApparition);
+        clothingStyle=PetClothingStyles.Normalize(nextClothing);
         try {if(!preview)WriteConfig();}
-        catch {hairStyle=oldHair;keyboardStyle=oldKeyboard;mouseStyle=oldMouse;padStyle=oldPad;headwearStyle=oldHeadwear;skinPalette=oldPalette;musicStyle=oldMusic;listeningStyle=oldListening;ornamentStyle=oldOrnament;throw;}
-        scene.Portrait.SetHairStyle(hairStyle);scene.SetKeyboardStyle(keyboardStyle);scene.SetMouseStyle(mouseStyle);scene.SetPadStyle(padStyle);scene.Portrait.SetHeadwearStyle(headwearStyle);scene.SetTone(skinPalette);scene.SetMusicStyle(musicStyle);scene.Portrait.SetListeningStyle(listeningStyle);scene.SetOrnamentStyle(ornamentStyle);Present(true);
+        catch {hairStyle=oldHair;keyboardStyle=oldKeyboard;mouseStyle=oldMouse;padStyle=oldPad;headwearStyle=oldHeadwear;skinPalette=oldPalette;musicStyle=oldMusic;listeningStyle=oldListening;apparitionStyle=oldApparition;clothingStyle=oldClothing;throw;}
+        if (apparitionStyle != oldApparition) apparitionSince = clock.Elapsed.TotalSeconds;
+        scene.Portrait.SetHairStyle(hairStyle);scene.SetKeyboardStyle(keyboardStyle);scene.SetMouseStyle(mouseStyle);scene.SetPadStyle(padStyle);scene.Portrait.SetHeadwearStyle(headwearStyle);scene.SetTone(skinPalette);scene.SetMusicStyle(musicStyle);scene.Portrait.SetListeningStyle(listeningStyle);scene.SetApparitionStyle(apparitionStyle, apparitionSince);
+        scene.SetClothingStyle(clothingStyle);
+        Present(true);
     }
     void OpenAssistant()
     {
@@ -499,33 +462,20 @@ internal sealed class KeyboardPetWindow : Form
         if (assistantWindow.WindowState == FormWindowState.Minimized) assistantWindow.WindowState = FormWindowState.Normal;
         assistantWindow.Show(); assistantWindow.Activate();
     }
-    void OpenTypingStatistics()
-    {
-        if (typingStatisticsWindow == null || typingStatisticsWindow.IsDisposed)
-        {
-            var window = new TypingStatisticsWindow(typingStatistics, () =>
-                preview ? "预览模式：统计仅在内存中，不保存。" : resting ? "休息中：打字计数已暂停。" :
-                !follow ? "键鼠跟随已关闭：打字计数已暂停。" : !input.Enabled ? "输入监听未开启：打字计数已暂停。" : "正在统计 · 每 10 秒自动保存，退出时保存。" );
-            typingStatisticsWindow = window;
-            window.FormClosed += (s, e) => { if (typingStatisticsWindow == window) typingStatisticsWindow = null; };
-        }
-        if (typingStatisticsWindow.WindowState == FormWindowState.Minimized) typingStatisticsWindow.WindowState = FormWindowState.Normal;
-        typingStatisticsWindow.Show(); typingStatisticsWindow.Activate();
-    }
     void UpdateInputSubscription()
     {
         inputState.MouseGain = bindings.MouseGain;
-        status.Text = resting ? "休息中" : !follow ? "键鼠跟随已暂停" : "输入监听准备中";
-        // Auxiliary windows must not interrupt the global input worker or discard
-        // pending keystrokes. Only the explicit follow/rest switches stop it.
-        if (!Visible || !follow || resting)
+        // Keep the input worker active through rest and auxiliary windows.
+        if (!Visible || !follow)
         {
             input.StopAndDrain(); inputState.Clear();
-            typingStatistics.Save();
             return;
         }
-        try { input.Enable(); status.Text = "键鼠实时绑定已开启"; }
-        catch (Win32Exception error) { status.Text = "输入监听未开启（错误 " + error.NativeErrorCode + "）"; }
+        try { input.Enable(); }
+        catch (Win32Exception)
+        {
+            // Keep the pet usable if Windows cannot start the input hooks.
+        }
     }
     void Tick(object sender, EventArgs e)
     {
@@ -535,21 +485,25 @@ internal sealed class KeyboardPetWindow : Form
         PositionChat();
         if (now >= nextTopMostRefresh) { RestoreTopMost(); nextTopMostRefresh = now + .5; }
         input.DrainPending();
-        if (now >= nextTypingSave) { typingStatistics.Save(); nextTypingSave = now + 10; }
-        Point pointer=PointToClient(Cursor.Position);
-        scene.ObservePointer(new PointF(pointer.X/SceneScale,pointer.Y/SceneScale),now,follow&&!resting);
         if (input.Enabled && now >= nextReconcile) { input.ReconcileReleased(); nextReconcile = now + .25; }
         scene.MusicPlaying = followMusic && music != null && music.Playing;
         scene.MusicLevel = music == null ? 0 : music.Peak;
-        musicStatus.Text = !followMusic ? "音乐：律动已关闭" : resting ? "音乐：休息中" : music == null ? "音乐：等待声音播放" :
-            music.LastError != 0 ? "音乐：暂时无法检测声音" : !music.Available ? "音乐：未找到声音输出设备" : music.Playing ? "音乐：播放中 · 正在律动" : "音乐：等待声音播放";
         bool speechChanged = speechBubble.Advance(now); scene.DialogueActive = speechBubble.Visible;
+
+        bool keyboardActive = inputState.HasKeyboardActivity(now);
+        bool mouseActive = inputState.HasMouse(now);
+        if (keyboardActive || mouseActive || pressed || scene.MusicPlaying || speechBubble.Visible)
+            lastActivity = now;
+        // Preserve a short key tap even if a slow rest frame outlasts its animation pulse.
+        resting = now - Math.Max(lastActivity, inputState.LastStrikeAt) >= RestDelaySeconds;
+        Point pointer=PointToClient(Cursor.Position);
+        scene.ObservePointer(new PointF(pointer.X/SceneScale,pointer.Y/SceneScale),now,follow&&!resting);
         bool changed = scene.Advance(now, dt, resting); Present(changed || speechChanged);
-        bool active=dragging||scene.Portrait.MusicBlend>.02f||inputState.HasKeyboardActivity(now)||inputState.HasMouse(now)||scene.Hands.TypingBlend>.02f;
+        bool active=dragging||scene.Portrait.MusicBlend>.02f||keyboardActive||mouseActive||scene.Hands.TypingBlend>.02f;
         double elapsedMs=(Stopwatch.GetTimestamp()-started)*1000.0/Stopwatch.Frequency;
         // Idle/rest animation needs fewer frames. On a slow machine leave
         // at least twice the frame's CPU time free instead of chasing 60 fps.
-        timer.Interval=Math.Min(250,Math.Max(resting ? 166 : active ? 33 : 66,(int)Math.Ceiling(elapsedMs*2)));
+        timer.Interval=Math.Min(250,Math.Max(resting ? 100 : active ? 33 : 66,(int)Math.Ceiling(elapsedMs*2)));
     }
     void RestoreTopMost()
     {
@@ -567,6 +521,7 @@ internal sealed class KeyboardPetWindow : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        lastActivity = clock.Elapsed.TotalSeconds;
         if (!preview && music == null) music = new SystemMusicMonitor();
         RestoreTopMost(); UpdateInputSubscription(); Present(true);
     }
@@ -634,9 +589,9 @@ internal sealed class KeyboardPetWindow : Form
         if (dragging) KeepVisible();
         else if (Hit(e.Location))
         {
-            speechBubble.Touch(clock.Elapsed.TotalSeconds);
-            scene.Interact(new PointF(e.X/SceneScale,e.Y/SceneScale),clock.Elapsed.TotalSeconds);
-            resting = false; restItem.Checked = false;
+            lastActivity = clock.Elapsed.TotalSeconds;
+            speechBubble.Touch(lastActivity);
+            scene.Interact(new PointF(e.X/SceneScale,e.Y/SceneScale),lastActivity);
             openChat = true;
         }
         pressed = dragging = false; Capture = false; Present(true);
@@ -667,8 +622,8 @@ internal sealed class KeyboardPetWindow : Form
     void WriteConfig()
     {
         string text=String.Format(CultureInfo.InvariantCulture,
-            "{{\"x\":{0},\"y\":{1},\"size\":{2},\"follow\":{3},\"hairStyle\":{4},\"bubbleKeys\":{5},\"followMusic\":{6},\"keyboardShape\":{7},\"mouseShape\":{8},\"skinPalette\":{9},\"mousePadShape\":{10},\"headwearShape\":{11},\"musicStyle\":{12},\"listeningStyle\":{13},\"deskOrnament\":{14}}}",
-            Left,Top,spriteWidth,follow ? 1 : 0,hairStyle,bubbleKeys ? 1 : 0,followMusic ? 1 : 0,keyboardStyle,mouseStyle,skinPalette,padStyle,headwearStyle,musicStyle,listeningStyle,ornamentStyle);
+            "{{\"x\":{0},\"y\":{1},\"size\":{2},\"follow\":{3},\"hairStyle\":{4},\"bubbleKeys\":{5},\"followMusic\":{6},\"keyboardShape\":{7},\"mouseShape\":{8},\"skinPalette\":{9},\"mousePadShape\":{10},\"headwearShape\":{11},\"musicStyle\":{12},\"listeningStyle\":{13},\"deskOrnament\":{14},\"clothingStyle\":{15}}}",
+            Left,Top,spriteWidth,follow ? 1 : 0,hairStyle,bubbleKeys ? 1 : 0,followMusic ? 1 : 0,keyboardStyle,mouseStyle,skinPalette,padStyle,headwearStyle,musicStyle,listeningStyle,apparitionStyle,clothingStyle);
         Directory.CreateDirectory(dataRoot);string temp=configPath+".tmp";File.WriteAllText(temp,text);
         if(File.Exists(configPath))File.Replace(temp,configPath,configPath+".bak");else File.Move(temp,configPath);
     }
@@ -684,20 +639,6 @@ internal sealed class KeyboardPetWindow : Form
             var assistant = assistantWindow; assistant.Close();
             if (!assistant.IsDisposed) e.Cancel = true;
         }
-        // The independent calendar must flush edits before the application exits.
-        // Its existing save-failure guard can cancel both window closures.
-        if (calendarWindow != null && !calendarWindow.IsDisposed)
-        {
-            var calendar = calendarWindow;
-            calendar.Close();
-            if (!calendar.IsDisposed) e.Cancel = true;
-        }
-        input.DrainPending();
-        if (!preview && !typingStatistics.Save())
-        {
-            e.Cancel = true;
-            KnightUi.ShowError(this, "打字统计保存失败", typingStatistics.Error + "\n请检查统计文件或目录权限后重试退出。");
-        }
         base.OnFormClosing(e);
     }
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -708,11 +649,8 @@ internal sealed class KeyboardPetWindow : Form
     {
         if (disposing && !released)
         {
-            input.StopAndDrain(); typingStatistics.Save();
+            input.StopAndDrain();
             released = true; timer.Stop(); timer.Dispose(); input.Dispose(); inputState.Clear(); menu.Dispose(); shutdown.Dispose();
-            inputState.TypingPressed -= typingStatistics.Record;
-            if (typingStatisticsWindow != null) { typingStatisticsWindow.Dispose(); typingStatisticsWindow = null; }
-            if (calendarWindow != null) { calendarWindow.Dispose(); calendarWindow = null; }
             if (chatWindow != null) { chatWindow.Dispose(); chatWindow = null; }
             if (assistantWindow != null) { assistantWindow.Dispose(); assistantWindow = null; }
             if (wardrobeWindow != null) { wardrobeWindow.Dispose(); wardrobeWindow = null; }
@@ -732,6 +670,7 @@ internal static class KeyboardPetTests
     internal static void Run(string root)
     {
         InputFeedbackTests.Run();
+        PetApparitions.CheckPosters(root);
         BoundPetTests.Run(root);
         using (var pet = new KeyboardPetWindow(root, true))
         using (var buffer = new Bitmap(pet.Width, pet.Height, PixelFormat.Format32bppArgb))

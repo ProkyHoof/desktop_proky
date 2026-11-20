@@ -490,82 +490,332 @@ internal static class WardrobeTests
             Check(pet.scene.KeyboardStyle==4&&pet.scene.MouseStyle==3&&pet.scene.PadStyle==2&&pet.scene.Tone==3&&pet.scene.Portrait.HeadwearStyle==2&&pet.scene.MusicStyle==2&&pet.scene.Portrait.ListeningStyle==2&&pet.scene.Portrait.HairStyle==2,"Restart restores the complete cyber theme and hairstyle");
         Console.WriteLine("PASS: six cyberpunk objects, neon palette, preset, mixed outfits, visible face, three sizes, rest, isolated preview, apply, resize and restart.");
     }
-    static void CheckDeskOrnaments(string root,string testRoot,string previewPath)
+    static Bitmap RenderApparition(BoundPetScene scene,double time)
+    {
+        var image=new Bitmap(BoundPetScene.WorldWidth,BoundPetScene.WorldHeight);
+        using(var g=Graphics.FromImage(image))scene.DrawApparition(g,time);
+        return image;
+    }
+    static long ApparitionAlpha(BoundPetScene scene,double time)
+    {
+        using(var image=RenderApparition(scene,time))
+        {
+            long alpha=0;
+            for(int y=0;y<image.Height;y+=3)for(int x=0;x<image.Width;x+=3)alpha+=image.GetPixel(x,y).A;
+            return alpha;
+        }
+    }
+    static void CheckApparitionMotion(BoundPetScene scene,double start)
+    {
+        double exit=start+7.12783;
+        using(var early=RenderApparition(scene,start+.25))
+        using(var later=RenderApparition(scene,start+.68))
+        using(var full=RenderApparition(scene,start+1.3))
+        using(var held=RenderApparition(scene,start+6.7))
+        using(var exiting=RenderApparition(scene,exit))
+        using(var almostGone=RenderApparition(scene,start+7.7))
+        using(var exitingAgain=RenderApparition(scene,exit+16))
+        {
+            const int cellSize=2;
+            int earlyPixels=0,laterPixels=0,fullPixels=0,exitingPixels=0,almostGonePixels=0;
+            int peakAlpha=0,fineDetails=0,gatheringParticles=0,scatteringParticles=0;
+            var bounds=Rectangle.Round(PetApparitions.Bounds);
+            int earlyTop=bounds.Bottom,laterTop=bounds.Bottom,fullTop=bounds.Bottom;
+            int earlyBottom=bounds.Top,fullBottom=bounds.Top;
+            int exitingTop=bounds.Bottom,almostGoneTop=bounds.Bottom;
+            for(int y=bounds.Top;y<bounds.Bottom;y+=cellSize)
+            for(int x=bounds.Left;x<bounds.Right;x+=cellSize)
+            {
+                Color a=early.GetPixel(x,y),b=later.GetPixel(x,y),c=full.GetPixel(x,y);
+                Color d=exiting.GetPixel(x,y),e=almostGone.GetPixel(x,y);
+                if(a.A>148)Check(a==b&&a==c,"Revealed artwork keeps its position and opacity");
+                if(b.A>148)Check(b==c,"Revealed artwork matches the finished poster");
+                Check(c==held.GetPixel(x,y),"The assembled poster holds its original position and scale");
+                if(d.A>148)Check(d==c,"Artwork cells keep their color and opacity during the exit");
+                if(e.A>148)Check(e==d&&e==c,"Remaining artwork cells hold their position during the exit");
+                Check(d==exitingAgain.GetPixel(x,y),"Particle positions and opacity repeat each cycle");
+                Check(c==full.GetPixel(x+1,y)&&c==full.GetPixel(x,y+1)&&c==full.GetPixel(x+1,y+1),
+                    "The rendered poster has crisp square pixels");
+                Check(d==exiting.GetPixel(x+1,y)&&d==exiting.GetPixel(x,y+1)&&d==exiting.GetPixel(x+1,y+1),
+                    "Exit removes complete square cells");
+                if((x-bounds.Left)%(2*cellSize)==0&&c.A>160)
+                {
+                    Color next=full.GetPixel(x+cellSize,y);
+                    if(next.A>160&&next!=c)fineDetails++;
+                }
+                if(a.A>0&&a==c)earlyPixels++;
+                if(b.A>0&&b==c)laterPixels++;
+                if(c.A>0)fullPixels++;
+                if(d.A>0&&d==c)exitingPixels++;
+                if(e.A>0&&e==c)almostGonePixels++;
+                if(b.A>=16&&c.A==0)gatheringParticles++;
+                if(d.A>=16&&c.A==0)scatteringParticles++;
+                peakAlpha=Math.Max(peakAlpha,c.A);
+                if(a.A>=16&&a==c){earlyTop=Math.Min(earlyTop,y);earlyBottom=y;}
+                if(b.A>=16&&b==c)laterTop=Math.Min(laterTop,y);
+                if(c.A>=16){fullTop=Math.Min(fullTop,y);fullBottom=y;}
+                if(d.A>=16&&d==c)exitingTop=Math.Min(exitingTop,y);
+                if(e.A>=16&&e==c)almostGoneTop=Math.Min(almostGoneTop,y);
+            }
+            Check(earlyPixels>0&&earlyPixels<laterPixels&&laterPixels<fullPixels,"The poster builds up progressively by pixel count");
+            Check(fineDetails>50,"The solid artwork resolves neighboring two-pixel cells");
+            Check(peakAlpha>=182&&peakAlpha<=185,"The solid parts of the poster blend at 72 percent opacity");
+            Check(earlyBottom==fullBottom&&earlyTop>laterTop+24&&laterTop>fullTop+24,
+                "The reveal starts at the bottom and visibly advances upward");
+            Check(almostGonePixels>0&&almostGonePixels<exitingPixels&&exitingPixels<fullPixels&&
+                fullTop<exitingTop&&exitingTop<almostGoneTop,"The poster dissolves progressively from top to bottom");
+            Check(gatheringParticles>12&&scatteringParticles>12,"Particles move beyond the silhouette during both transitions");
+        }
+    }
+    static void CheckApparitions(string root,string testRoot,string previewPath)
     {
         if(!String.IsNullOrEmpty(previewPath))Directory.CreateDirectory(Path.GetDirectoryName(previewPath));
-        string data=Path.Combine(testRoot,"desk-ornaments"),config=Path.Combine(data,"keyboard_pet_config.json");
+        string data=Path.Combine(testRoot,"apparitions"),config=Path.Combine(data,"keyboard_pet_config.json");
         Directory.CreateDirectory(data);File.WriteAllText(config,"{\"follow\":0,\"hairStyle\":1}");
         using(var pet=new KeyboardPetWindow(root,false,dataRoot:data))
-        using(var sheet=new Bitmap(1080,680))
+        using(var sheet=new Bitmap(1080,895))
         using(var canvas=Graphics.FromImage(sheet))
-        using(var font=new Font("Microsoft YaHei UI",13,FontStyle.Bold))
+        using(var font=new Font("Microsoft YaHei UI",16,FontStyle.Bold))
         {
             ((Timer)Field(pet,"timer")).Stop();
-            Check(pet.scene.OrnamentStyle==0,"Old settings start without an ornament");
+            Check(pet.scene.ApparitionStyle==PetApparitions.None,"Missing legacy setting defaults to off");
             var window=Open(pet);((Timer)Field(window,"timer")).Stop();
-            var scene=(BoundPetScene)Field(window,"scene");var choices=(ComboBox)Field(window,"ornament");
-            Check(choices.Items.Cast<object>().Select(v=>v.ToString()).SequenceEqual(new[]{"无桌饰","原版骑士","海盗船","高达"}),"Wardrobe has the three requested ornaments and an off option");
-            var original=pet.scene;
+            var scene=(BoundPetScene)Field(window,"scene");var choices=(ComboBox)Field(window,"apparition");
+            Check(choices.Items.Cast<string>().SequenceEqual(new[]{"关闭","像素骑士","像素海盗","像素高达"}),"Wardrobe offers three pixel characters and off");
             for(int outfit=0;outfit<3;outfit++)
             {
-                original=pet.scene;
-                string before=File.ReadAllText(config);int old=pet.scene.OrnamentStyle;
+                var original=pet.scene;
+                string before=File.ReadAllText(config);int old=pet.scene.ApparitionStyle;
                 window.SelectOutfit(outfit);
-                Check(scene.OrnamentStyle==outfit+1&&pet.scene.OrnamentStyle==old&&File.ReadAllText(config)==before,"Each outfit previews the matching ornament without applying or saving");
-                for(int frame=0;frame<40;frame++)scene.Advance(3+frame*.05,.05,false);
-                Color background=outfit==0 ? Color.FromArgb(243,245,249) : outfit==1 ? Color.FromArgb(246,237,220) : Color.FromArgb(23,32,49);
-                using(var brush=new SolidBrush(background))canvas.FillRectangle(brush,outfit*360,0,360,680);
-                canvas.DrawString(new[]{"骑士 · 原版骑士","海盗 · 海盗船","赛博 · 高达"}[outfit],font,outfit==2 ? Brushes.WhiteSmoke : Brushes.DarkSlateGray,outfit*360+16,16);
-                var saved=canvas.Save();canvas.TranslateTransform(outfit*360,-4);scene.Draw(canvas,5,false,true);canvas.Restore(saved);
-                using(var image=PetDeskOrnaments.Create(outfit+1))canvas.DrawImage(image,new Rectangle(outfit*360+112,440,136,204));
-                using(var ornament=new Bitmap(BoundPetScene.WorldWidth,BoundPetScene.WorldHeight))
+                Check(scene.ApparitionStyle==outfit+1&&scene.ClothingStyle==outfit&&
+                    pet.scene.ApparitionStyle==old&&File.ReadAllText(config)==before,"Preset previews matching apparition and clothing without saving");
+
+                double start=(double)Field(scene,"apparitionSince")+PetApparitions.PreviewDelay;
+                double peak=start+1.3, gap=start+12;
+                long strongest=ApparitionAlpha(scene,peak), dissolving=ApparitionAlpha(scene,start+7.5);
+                Check(ApparitionAlpha(scene,start-.04)==0&&dissolving>0&&dissolving<strongest&&
+                    ApparitionAlpha(scene,start+8.01)==0&&ApparitionAlpha(scene,gap)==0&&
+                    ApparitionAlpha(scene,start+15.99)==0&&ApparitionAlpha(scene,peak+16)==strongest,
+                    "The preview repeats eight visible seconds and eight fully transparent seconds");
+                CheckApparitionMotion(scene,start);
+
+                scene.Advance(1.5,.1,false);
+                using(var active=new Bitmap(BoundPetScene.WorldWidth,BoundPetScene.WorldHeight))
+                using(var inactive=new Bitmap(active.Width,active.Height))
                 {
-                    using(var g=Graphics.FromImage(ornament))scene.DrawOrnament(g);
-                    int visible=0;var r=BoundPetScene.DeskOrnamentBounds;
-                    for(int y=(int)r.Top;y<r.Bottom;y++)for(int x=(int)r.Left;x<r.Right;x++)
-                    if(ornament.GetPixel(x,y).A>=128){visible++;Check(scene.Hit(new PointF(x+.5f,y+.5f),false,true),"Visible ornament pixels can be dragged with the pet: style="+(outfit+1)+", x="+x+", y="+y+", alpha="+ornament.GetPixel(x,y).A);}
-                    Check(visible>600,"Each ornament has a visible miniature silhouette");
-                    Check(!scene.Hit(new PointF(r.Right-1,r.Bottom-1),false,true),"Transparent space around the ornament stays click-through");
+                    using(var g=Graphics.FromImage(active))scene.Draw(g,peak,false,true);
+                    using(var g=Graphics.FromImage(inactive))scene.Draw(g,gap,false,true);
+                    Check(active.GetPixel(177,260).A==255&&active.GetPixel(177,260)==inactive.GetPixel(177,260),
+                        "The apparition leaves opaque character pixels unchanged");
+                    int exposed=0;
+                    for(int y=75;y<118;y+=2)for(int x=8;x<340;x+=2)
+                    {
+                        if(active.GetPixel(x,y).A<16||inactive.GetPixel(x,y).A!=0)continue;
+                        exposed++;
+                        Check(!scene.Hit(new PointF(x+.5f,y+.5f),false,true),"Visible apparition pixels are click-through");
+                    }
+                    Check(exposed>80,"The apparition is visible above and behind the pet");
+                    Check(active.GetPixel(331,324)==inactive.GetPixel(331,324),"The apparition leaves the old apparition area unchanged");
+                    if(!String.IsNullOrEmpty(previewPath))
+                    {
+                        Color background=outfit==0 ? Color.FromArgb(243,245,249) : outfit==1 ? Color.FromArgb(246,237,220) : Color.FromArgb(23,32,49);
+                        using(var brush=new SolidBrush(background))canvas.FillRectangle(brush,outfit*360,0,360,sheet.Height);
+                        var ink=outfit==2 ? Brushes.WhiteSmoke : Brushes.DarkSlateGray;
+                        canvas.DrawString(choices.SelectedItem+"  ·  出现",font,ink,outfit*360+16,17);
+                        canvas.DrawString("像素散开",font,ink,outfit*360+16,427);
+                        var source=new Rectangle(0,46,352,374);
+                        canvas.DrawImage(active,new Rectangle(outfit*360+4,36,352,374),source,GraphicsUnit.Pixel);
+                        var saved=canvas.Save();canvas.TranslateTransform(outfit*360+4,424);
+                        scene.DrawApparition(canvas,start+7.25);canvas.Restore(saved);
+                        for(int step=0;step<2;step++)
+                        {
+                            int left=outfit*360+step*176+4;
+                            canvas.DrawString(step==0 ? "底部显现" : "粒子聚拢",font,ink,left+12,720);
+                            saved=canvas.Save();canvas.TranslateTransform(left,728);canvas.ScaleTransform(.5f,.5f);
+                            scene.DrawApparition(canvas,start+(step==0 ? .25 : .68));canvas.Restore(saved);
+                        }
+                    }
                 }
+
                 pet.inputState.Key(65,true,5);window.ApplySelection();
-                Check(pet.scene==original&&pet.inputState.HasKeys&&pet.scene.OrnamentStyle==outfit+1,"Applying an ornament preserves scene and active input");
-                Check(File.ReadAllText(config).Contains("\"deskOrnament\":"+(outfit+1)),"Ornament saves with the wardrobe");
+                Check(pet.scene==original&&pet.inputState.HasKeys&&pet.scene.ApparitionStyle==outfit+1,"Applying an apparition preserves the scene and active input");
+                string savedConfig=File.ReadAllText(config);
+                Check(pet.scene.ClothingStyle==outfit&&savedConfig.Contains("\"clothingStyle\":"+outfit)&&
+                    savedConfig.Contains("\"deskOrnament\":"+(outfit+1)),"Apparition and clothing use the saved settings");
                 pet.inputState.Clear();
+                double since=(double)Field(pet.scene,"apparitionSince");
+                double liveStart=since+8;
+                Check(ApparitionAlpha(pet.scene,liveStart-.1)==0&&ApparitionAlpha(pet.scene,liveStart+.25)>0&&
+                    ApparitionAlpha(pet.scene,liveStart+7.875)>0&&ApparitionAlpha(pet.scene,liveStart+8.01)==0&&
+                    ApparitionAlpha(pet.scene,liveStart+15.99)==0&&ApparitionAlpha(pet.scene,liveStart+16.25)>0,
+                    "The desktop waits eight seconds before repeating eight visible and eight hidden seconds");
                 foreach(int width in new[]{252,336,420})
                 {
                     Invoke(pet,"SetSpriteSize",width);
-                    Check(pet.scene.OrnamentStyle==outfit+1,"Resizing retains the ornament");
+                    Check(pet.scene.ApparitionStyle==outfit+1&&pet.scene.ClothingStyle==outfit&&
+                        (double)Field(pet.scene,"apparitionSince")==since,"Resizing retains the apparition, timing and clothing");
                     using(var image=new Bitmap(pet.Width,pet.Height))
                     using(var g=Graphics.FromImage(image))
                     {
-                        pet.DrawSceneAt(g,6);
-                        for(int y=0;y<image.Height;y++)Check(image.GetPixel(image.Width-1,y).A==0,"The ornament fits inside the native window at every pet size");
+                        pet.DrawSceneAt(g,liveStart+7.25);
+                        for(int y=0;y<image.Height;y++)Check(image.GetPixel(image.Width-1,y).A==0,"The apparition fits the native window at every size");
                     }
                 }
             }
-            window.SelectOrnamentStyle(1);window.SelectKeyboardStyle(3);window.SelectPalette(3);
-            Check(scene.OrnamentStyle==1&&scene.KeyboardStyle==3&&scene.Tone==3,"Ornaments support independent mixing");
-            window.SelectOrnamentStyle(0);Check(scene.OrnamentStyle==0&&pet.scene.OrnamentStyle==3,"Off previews independently");
-            window.Close();Check(pet.scene.OrnamentStyle==3,"Closing discards an unapplied ornament selection");
-            if(!String.IsNullOrEmpty(previewPath))sheet.Save(Path.Combine(Path.GetDirectoryName(previewPath),"desk-ornaments.png"),ImageFormat.Png);
+            window.SelectApparitionStyle(PetApparitions.Knight);window.SelectKeyboardStyle(3);window.SelectPalette(3);
+            Check(scene.ApparitionStyle==PetApparitions.Knight&&scene.KeyboardStyle==3&&scene.Tone==3,"Apparition styles mix independently");
+            window.SelectApparitionStyle(PetApparitions.None);window.SelectClothingStyle(PetClothingStyles.Captain);
+            Check(ApparitionAlpha(scene,5)==0&&pet.scene.ApparitionStyle==PetApparitions.Gundam&&
+                pet.scene.ClothingStyle==PetClothingStyles.Tactical,"Off is immediate in preview and leaves the live pet unchanged");
+            window.Close();Check(pet.scene.ApparitionStyle==PetApparitions.Gundam&&pet.scene.ClothingStyle==PetClothingStyles.Tactical,"Closing discards unapplied changes");
+            if(!String.IsNullOrEmpty(previewPath))sheet.Save(Path.Combine(Path.GetDirectoryName(previewPath),"wardrobe-apparitions.png"),ImageFormat.Png);
         }
         using(var pet=new KeyboardPetWindow(root,false,dataRoot:data))
         {
-            ((Timer)Field(pet,"timer")).Stop();Check(pet.scene.OrnamentStyle==3,"Restart restores the saved Gundam ornament");
+            ((Timer)Field(pet,"timer")).Stop();
+            Check(pet.scene.ApparitionStyle==PetApparitions.Gundam&&pet.scene.ClothingStyle==PetClothingStyles.Tactical,"Restart restores the saved apparition and clothing");
             var window=Open(pet);((Timer)Field(window,"timer")).Stop();
-            if(!String.IsNullOrEmpty(previewPath))
-            {
-                Application.DoEvents();using(var image=new Bitmap(window.Width,window.Height))
-                {window.DrawToBitmap(image,window.ClientRectangle);image.Save(Path.Combine(Path.GetDirectoryName(previewPath),"wardrobe-desk-ornaments.png"),ImageFormat.Png);}
-            }
             string before=File.ReadAllText(config);Directory.CreateDirectory(config+".tmp");
-            window.SelectOrnamentStyle(2);window.ApplySelection();
-            Check(pet.scene.OrnamentStyle==3&&(int)Field(pet,"ornamentStyle")==3&&File.ReadAllText(config)==before,"A save failure rolls back ornament selection");
+            window.SelectApparitionStyle(PetApparitions.Pirate);window.SelectClothingStyle(PetClothingStyles.Captain);window.ApplySelection();
+            Check(pet.scene.ApparitionStyle==PetApparitions.Gundam&&(int)Field(pet,"apparitionStyle")==PetApparitions.Gundam&&
+                pet.scene.ClothingStyle==PetClothingStyles.Tactical&&(int)Field(pet,"clothingStyle")==PetClothingStyles.Tactical&&
+                File.ReadAllText(config)==before,"A save failure rolls back apparition and clothing");
             window.Close();
         }
-        File.WriteAllText(config,"{\"follow\":0,\"deskOrnament\":999}");
-        using(var pet=new KeyboardPetWindow(root,true,dataRoot:data))Check(pet.scene.OrnamentStyle==0,"An unknown ornament value falls back to none");
-        Console.WriteLine("PASS: knight/ship/Gundam ornaments, presets, isolated preview/cancel, mixing/off, save/reload/resize, alpha hit testing and rollback.");
+        File.WriteAllText(config,"{\"follow\":0,\"deskOrnament\":999,\"clothingStyle\":999}");
+        using(var pet=new KeyboardPetWindow(root,true,dataRoot:data))
+            Check(pet.scene.ApparitionStyle==PetApparitions.None&&pet.scene.ClothingStyle==PetClothingStyles.Knight,"Unknown selections use their defaults");
+        Console.WriteLine("PASS: apparition palette, bottom-up reveal, fixed scale, particles, pixel dissolve, eight seconds visible and eight seconds hidden, layering, click-through, mixing, old settings, save/reload/resize and rollback.");
+    }
+    static void CheckClothing(string root,string previewPath)
+    {
+        using(var window=new PetWardrobeWindow(root,PetHairStyles.Short,h=>{}))
+        {
+            ((Timer)Field(window,"timer")).Stop();
+            var scene=(BoundPetScene)Field(window,"scene");
+            var clothes=(ComboBox)Field(window,"clothing");
+            Check(clothes.Items.Cast<string>().SequenceEqual(new[]{"纹章骑士服","船长礼服","霓虹战术服"}),"Wardrobe offers three sets of clothing");
+            Check(scene.ClothingStyle==PetClothingStyles.Knight,"Legacy settings default to knight clothing");
+            Check(RenderChanges(scene,()=>window.SelectClothingStyle(PetClothingStyles.Captain))>650,"Captain coat and sleeves change the artwork with the same silhouette");
+            Check(RenderChanges(scene,()=>window.SelectClothingStyle(PetClothingStyles.Tactical))>650,"Tactical jacket and sleeves change the artwork with the same silhouette");
+            Check(RenderChanges(scene,()=>window.SelectPalette(PetSkinStyles.Cyber))>650&&scene.ClothingStyle==PetClothingStyles.Tactical,
+                "Clothing follows the palette without changing its cut");
+            if(!String.IsNullOrEmpty(previewPath))
+            {
+                using(var sheet=new Bitmap(1320,412))
+                using(var canvas=Graphics.FromImage(sheet))
+                using(var font=new Font("Microsoft YaHei UI",18,FontStyle.Bold,GraphicsUnit.Pixel))
+                {
+                    var backgrounds=new[]{Color.FromArgb(246,243,246),Color.FromArgb(247,234,211),Color.FromArgb(29,35,53)};
+                    for(int outfit=0;outfit<3;outfit++)
+                    {
+                        window.SelectOutfit(outfit);
+                        Check(scene.ClothingStyle==outfit,"Preset selects matching clothing");
+                        scene.Advance(1,.1,false);
+                        using(var brush=new SolidBrush(backgrounds[outfit]))canvas.FillRectangle(brush,outfit*440,0,440,sheet.Height);
+                        canvas.DrawString((string)clothes.SelectedItem,font,outfit==2 ? Brushes.WhiteSmoke : Brushes.DarkSlateGray,outfit*440+22,18);
+                        var saved=canvas.Save();canvas.TranslateTransform(outfit*440+12,-68);canvas.ScaleTransform(1.18f,1.18f);
+                        scene.Draw(canvas,1,false,true);canvas.Restore(saved);
+                    }
+                    sheet.Save(Path.Combine(Path.GetDirectoryName(previewPath),"wardrobe-clothing.png"),ImageFormat.Png);
+                }
+            }
+        }
+        Console.WriteLine("PASS: three clothing designs, independent selection, palette, and transparent silhouette.");
+    }
+    static void CheckClassicArt(Action<Graphics> draw,string message)
+    {
+        using(var image=new Bitmap(BoundPetScene.WorldWidth,BoundPetScene.WorldHeight))
+        {
+            using(var g=Graphics.FromImage(image))draw(g);
+            int visible=0,foreign=0;
+            for(int y=0;y<image.Height;y++)for(int x=0;x<image.Width;x++)
+            {
+                Color c=image.GetPixel(x,y);if(c.A<12)continue;visible++;
+                if(Math.Max(c.G,c.B)>c.R+25&&Math.Max(c.G,c.B)-Math.Min(c.R,Math.Min(c.G,c.B))>65)foreign++;
+            }
+            Check(visible>20,message+" is visible");
+            Check(foreign==0,message+" uses classic red and neutral accents without cyan, green or purple");
+        }
+    }
+    static void CheckClassicCoverage(string root,string testRoot,string previewPath)
+    {
+        using(var window=new PetWardrobeWindow(root,0,h=>{}))
+        using(var sheet=new Bitmap(1080,820))
+        using(var canvas=Graphics.FromImage(sheet))
+        using(var font=new Font("Microsoft YaHei UI",13,FontStyle.Bold))
+        {
+            ((Timer)Field(window,"timer")).Stop();
+            var scene=(BoundPetScene)Field(window,"scene");
+            var input=(InputFeedbackState)Field(window,"input");
+            for(int outfit=0;outfit<3;outfit++)
+            {
+                window.SelectOutfit(outfit);window.SelectPalette(0);
+                scene.MusicPlaying=true;scene.MusicLevel=.35f;
+                for(int row=0;row<2;row++)
+                {
+                    input.Clear();
+                    for(int frame=0;frame<=360;frame++)
+                    {
+                        double now=outfit*30+row*12+frame/30.0;
+                        if(row==0&&frame%3==0){input.Key(65,true,now);input.Key(65,false,now+.003);}
+                        scene.Advance(now,1/30.0,false);
+                    }
+                    double at=outfit*30+row*12+12;
+                    if(row==1){input.Button(1,true,at);input.Button(2,true,at);input.Wheel(120,false,at);}
+                    Check(scene.Tone==0&&scene.ApparitionStyle==outfit+1,"Classic palette preserves each outfit and apparition choice");
+                    if(outfit==2)
+                    {
+                        CheckClassicArt(g=>scene.DrawDesk(g,at),"Classic cyber desk and keys");
+                        CheckClassicArt(g=>scene.DrawCyberMouseInstrument(g),"Classic hand emitter");
+                        if(row==0)CheckClassicArt(g=>Invoke(scene.Portrait,"DrawCyberVisor",g,false),"Classic visor");
+                        else CheckClassicArt(g=>{Invoke(scene,"DrawCyberMouse",g,at);Invoke(scene,"DrawCyberMouseFeedback",g,at);},"Classic mouse projection and click effects");
+                        CheckClassicArt(g=>Invoke(scene.Portrait,"DrawNeuralAudio",g),"Classic neural audio");
+                    }
+                    CheckClassicArt(g=>Invoke(scene,"DrawMusicBackdrop",g,at),"Classic music style "+outfit);
+                    // Recoloring cached devices and apparitions must return exactly
+                    // to classic without changing alpha or accumulating tint.
+                    using(var before=new Bitmap(BoundPetScene.WorldWidth,BoundPetScene.WorldHeight))
+                    using(var after=new Bitmap(before.Width,before.Height))
+                    {
+                        using(var g=Graphics.FromImage(before))scene.DrawDesk(g,at);
+                        double apparitionAt=(double)Field(scene,"apparitionSince")+PetApparitions.PreviewDelay+1.3;
+                        using(var apparition=RenderApparition(scene,apparitionAt))
+                        {
+                            scene.SetTone(1);int changed=0;
+                            using(var recolored=RenderApparition(scene,apparitionAt))
+                            for(int y=0;y<apparition.Height;y+=4)for(int x=0;x<apparition.Width;x+=4)
+                            {
+                                Color a=apparition.GetPixel(x,y),b=recolored.GetPixel(x,y);
+                                Check(a.A==b.A,"Recoloring apparitions preserves their transparent silhouette");
+                                if(a!=b)changed++;
+                            }
+                            Check(changed>50,"Palette changes refresh the selected apparition texture");
+                        }
+                        scene.SetTone(3);scene.SetTone(0);
+                        using(var g=Graphics.FromImage(after))scene.DrawDesk(g,at);
+                        for(int y=0;y<before.Height;y++)for(int x=0;x<before.Width;x++)
+                            Check(before.GetPixel(x,y)==after.GetPixel(x,y),"Palette round trip restores classic device and apparition pixels exactly");
+                    }
+                    using(var fill=new SolidBrush(row==0 ? Color.FromArgb(242,244,247) : Color.FromArgb(25,28,34)))canvas.FillRectangle(fill,outfit*360,row*410,360,410);
+                    canvas.DrawString(new[]{"经典造型","海盗造型","赛博造型"}[outfit]+" + 经典配色",font,row==0 ? Brushes.Black : Brushes.White,outfit*360+12,row*410+12);
+                    var saved=canvas.Save();canvas.SetClip(new Rectangle(outfit*360,row*410+36,360,374));
+                    canvas.TranslateTransform(outfit*360+4,row*410-65);scene.Draw(canvas,row==0 ? at+1 : at,false,true);canvas.Restore(saved);
+                }
+            }
+            if(!String.IsNullOrEmpty(previewPath))sheet.Save(Path.Combine(Path.GetDirectoryName(previewPath),"classic-outfit-mixes.png"),ImageFormat.Png);
+        }
+        string data=Path.Combine(testRoot,"classic-mixed");Directory.CreateDirectory(data);
+        using(var pet=new KeyboardPetWindow(root,false,dataRoot:data))
+        {
+            ((Timer)Field(pet,"timer")).Stop();var window=Open(pet);
+            window.SelectOutfit(2);window.SelectPalette(0);window.ApplySelection();window.Close();
+            Invoke(pet,"SetSpriteSize",420);
+            Check(pet.scene.Tone==0&&pet.scene.KeyboardStyle==4&&pet.scene.ApparitionStyle==3,"Resize preserves classic with cyber shapes");
+        }
+        using(var pet=new KeyboardPetWindow(root,true,dataRoot:data))
+            Check(pet.scene.Tone==0&&pet.scene.KeyboardStyle==4&&pet.scene.MouseStyle==3&&pet.scene.ApparitionStyle==3,"Restart restores classic with independently selected cyber shapes");
+        Console.WriteLine("PASS: classic palette covers all outfits, music effects, cyber devices, visor, neural audio and apparitions; exact color round trips, mixed save/reload and resize.");
     }
     internal static void Run(string root,string testRoot,string previewPath)
     {
@@ -715,7 +965,9 @@ internal static class WardrobeTests
         CheckPirateHat(root,previewPath);
         CheckMusicLooks(root,previewPath);
         CheckCyberpunk(root,testRoot,previewPath);
-        CheckDeskOrnaments(root,testRoot,previewPath);
+        CheckApparitions(root,testRoot,previewPath);
+        CheckClothing(root,previewPath);
+        CheckClassicCoverage(root,testRoot,previewPath);
         Console.WriteLine("PASS: navigation chart, pirate hat, retired keyboards, original eyes and keyboard shapes and original mouse, optional knight sword and parchment keyboard, unified palettes, transparency, isolated previews, apply/cancel, input continuity, save/reload/resize, legacy/invalid configuration and save failure.");
     }
 }
